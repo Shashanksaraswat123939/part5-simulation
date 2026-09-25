@@ -16,7 +16,7 @@ concurrency:
 
 env:
   PARTS_REF: ${{ inputs.parts_ref || 'upgrade/v2' }}
-  PY_DEPS: numpy scipy pandas trimesh scikit-image shapely rtree mapbox-earcut manifold3d fast_simplification jax jaxlib matplotlib
+  PY_DEPS: pytest numpy scipy pandas trimesh scikit-image shapely rtree mapbox-earcut manifold3d fast_simplification jax jaxlib matplotlib
 
 jobs:
   unit-tests:

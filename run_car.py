@@ -60,6 +60,8 @@ def export_body(geom, path: Path) -> dict:
     half.vertices[half.vertices[:, 1] < 0, 1] = 0.0
     half.export(str(path), file_type="stl_ascii")
     _, n = label(geom.phi.grid < 0)
+    if not half.is_watertight:
+        raise SystemExit(f"body STL {path.name} is not watertight; Part 2 would reject it")
     return {"faces": len(half.faces), "watertight": bool(half.is_watertight),
             "field_bodies": int(n), "t55_cells_protected": getattr(geom, "t55_cells_protected", 0)}
 
