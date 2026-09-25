@@ -26,6 +26,7 @@ def main(argv=None):
     ap.add_argument("--res", default="coarse")
     ap.add_argument("--trust-mm", type=float, default=1.0)
     ap.add_argument("--substeps", type=int, default=6)
+    ap.add_argument("--smooth-mm", type=float, default=0.0)
     ap.add_argument("--np", type=int, default=4)
     ap.add_argument("--keep-runs", action="store_true")
     a = ap.parse_args(argv)
@@ -33,7 +34,8 @@ def main(argv=None):
     ra = argparse.Namespace(**dict(
         W=120.3, x_front=46.0, d_halo=43.72, stage1_mm=2.0, stage1_iters=100, cfd_mm=1.0,
         wheels="carbon_rim_capped", ballast="lead", res=a.res, np=a.np, cfd_iters=2000,
-        adj_iters=1000, substeps=a.substeps, trust_mm=a.trust_mm, keep_runs=a.keep_runs))
+        adj_iters=1000, substeps=a.substeps, trust_mm=a.trust_mm, smooth_mm=a.smooth_mm,
+        keep_runs=a.keep_runs))
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     import assembly as p4

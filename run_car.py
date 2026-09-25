@@ -81,6 +81,7 @@ def make_bindings(a, out: Path, asm: dict, seed_geom):
         adjoint_kwargs=dict(common, primal_iters=a.adj_iters, adjoint_iters=a.adj_iters),
         seed_geometry=seed_geom, ballast_material=a.ballast,
         hj_max_substeps=a.substeps, hj_trust_radius_m=a.trust_mm / 1000.0,
+        hj_aero_smooth_m=a.smooth_mm / 1000.0,
     )
 
 
@@ -239,6 +240,7 @@ def main(argv=None):
     ap.add_argument("--adj-iters", type=int, default=1000)
     ap.add_argument("--substeps", type=int, default=6)
     ap.add_argument("--trust-mm", type=float, default=1.0)
+    ap.add_argument("--smooth-mm", type=float, default=0.0)
     ap.add_argument("--keep-runs", action="store_true")
     a = ap.parse_args(argv)
     out = Path(a.out)

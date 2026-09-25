@@ -30,8 +30,8 @@ def test_legality_measures_width_height_overhang_and_block():
         assert abs(float(r["block_length"]["note"].split()[0]) - 190.0) < 0.5
         assert r["block_width"]["pass"] and r["T4.1_single_body"]["pass"]
         assert r["T3.6_mass"]["margin"] > 0
-        # The v2 rear wheel-support CAD bottoms out at 1.40 mm: a real T3.7 miss.
-        assert not r["T3.7_clearance"]["pass"] and "supports" in r["T3.7_clearance"]["note"]
+        # The v2 rear-support CAD bottoms at 1.40 mm; Part 4 trims it to 1.51.
+        assert r["T3.7_clearance"]["pass"]
         r2 = legality.check(body, a, {"competition_mass_g": 47.8, "ballast_g": 15.8,
                                       "capacity_g": 15.8}, field_bodies=2)
         assert not r2["T3.6_mass"]["pass"] and not r2["T4.1_single_body"]["pass"]
