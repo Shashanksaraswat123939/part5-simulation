@@ -1,0 +1,12 @@
+numpy
+scipy
+pandas
+trimesh
+scikit-image
+shapely
+rtree
+mapbox-earcut
+manifold3d
+jax
+jaxlib
+matplotlib
