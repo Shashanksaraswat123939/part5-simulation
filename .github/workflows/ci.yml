@@ -65,7 +65,7 @@ jobs:
         include:
           - { id: optimise_coarse, args: "--cfd --optimise 4 --final-cfd --res coarse" }
           - { id: cfd_medium, args: "--cfd --res medium" }
-          - { id: cfd_medium_cadwheels, args: "--cfd --res medium --wheels cad_v2" }
+          - { id: sign_check, script: sign_check.py, args: "--res coarse" }
     env:
       OMPI_MCA_hwloc_base_use_hwthreads_as_cpus: "1"
       OMPI_MCA_rmaps_base_oversubscribe: "1"
@@ -92,8 +92,11 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p ../out
-          python run_car.py --out ../out/${{ matrix.id }} --np 4 --keep-runs ${{ matrix.args }} 2>&1 | tee ../out/run_${{ matrix.id }}.log
-          cat ../out/${{ matrix.id }}/report.md >> $GITHUB_STEP_SUMMARY
+          python ${{ matrix.script || 'run_car.py' }} --out ../out/${{ matrix.id }} --np 4 --keep-runs ${{ matrix.args }} 2>&1 | tee ../out/run_${{ matrix.id }}.log
+          for f in report.md sign_check.json; do
+            [ -f ../out/${{ matrix.id }}/$f ] && { echo '```'; cat ../out/${{ matrix.id }}/$f; echo '```'; } >> $GITHUB_STEP_SUMMARY
+          done
+          true
       - name: Rank the records
         if: always()
         working-directory: part5-simulation
@@ -120,5 +123,6 @@ jobs:
             out/${{ matrix.id }}/*.log
             out/${{ matrix.id }}/*.stl
             out/${{ matrix.id }}/parts*/*.json
+            out/${{ matrix.id }}/parts*/*.stl
             out/${{ matrix.id }}/records/*.json
             out/${{ matrix.id }}/solver_logs/

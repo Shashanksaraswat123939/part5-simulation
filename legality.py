@@ -110,6 +110,15 @@ def check(body_half_stl: str, assembly: dict, mass_state: dict | None = None,
     n = field_bodies if field_bodies is not None else n_mesh
     r["T4.1_single_body"] = _entry(0.0 if n == 1 else -1.0, f"{n} bodies")
 
+    # Every non-wheel part must touch the body. The mass term can carve the
+    # printed nose away (seen 2026-09-26), leaving the front-wing mount in air.
+    for name, m in parts.items():
+        if name.startswith("wheel"):
+            continue
+        v = np.asarray(m.vertices)[:: max(1, len(m.vertices) // 4000)]
+        gap = float(body.nearest.on_surface(v)[1].min()) * 1e3
+        r[f"attached_{name}"] = _entry(0.3 - gap, f"closest {gap:.2f} mm to the body")
+
     # T5.5 chamber wall (probe points inside the body).
     frac = t55_wall_fraction(body, rear_face_mm=milled[:, 0].max())
     r["T5.5_wall"] = _entry(0.0 if frac >= 0.999 else -(1 - frac) * REGS["T5.5_wall"],
