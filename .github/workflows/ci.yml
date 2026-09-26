@@ -63,8 +63,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { id: sign_check_medium_t03, script: sign_check.py, args: "--res medium --smooth-mm 4 --trust-mm 0.3" }
-          - { id: optimise_medium_t03, args: "--cfd --optimise 3 --final-cfd --res medium --smooth-mm 4 --trust-mm 0.3" }
+          - { id: final_optimise_medium, args: "--cfd --optimise 3 --final-cfd --res medium" }
+          - { id: final_cfd_medium, args: "--cfd --res medium" }
     env:
       OMPI_MCA_hwloc_base_use_hwthreads_as_cpus: "1"
       OMPI_MCA_rmaps_base_oversubscribe: "1"
