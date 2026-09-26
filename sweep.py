@@ -72,6 +72,18 @@ VARIANTS = {
     "fw6_gap8": {"front": dict(gap_to_wheel_mm=8.0)},
     "fw6_flap20": {"front": dict(flap_chord_mm=8.0, flap_aoa_deg=20.0)},
     "fw6_flap30": {"front": dict(flap_chord_mm=8.0, flap_aoa_deg=30.0)},
+    # round 5, the final car: round-4 winners (flap at 30 deg, 1 mm dome,
+    # and the OLD rear wing, which beat the minimum one once both converged)
+    "dome1_repeat": {"wheel": dict(dome=1.0)},
+    "flap30_repeat": {"front": dict(flap_chord_mm=8.0, flap_aoa_deg=30.0)},
+    "final": {"front": dict(flap_chord_mm=8.0, flap_aoa_deg=30.0), "wheel": dict(dome=1.0),
+              "rear": dict(chord_mm=16.0, t_frac=0.15)},
+    "final_repeat": {"front": dict(flap_chord_mm=8.0, flap_aoa_deg=30.0), "wheel": dict(dome=1.0),
+                     "rear": dict(chord_mm=16.0, t_frac=0.15)},
+    "final_repeat2": {"front": dict(flap_chord_mm=8.0, flap_aoa_deg=30.0), "wheel": dict(dome=1.0),
+                      "rear": dict(chord_mm=16.0, t_frac=0.15)},
+    "final_nodome": {"front": dict(flap_chord_mm=8.0, flap_aoa_deg=30.0),
+                     "rear": dict(chord_mm=16.0, t_frac=0.15)},
     # printed nose cone ahead of Ref A (Part 4 nose.py)
     "nose_20": {"nose": dict()},
     "nose_30": {"nose": dict(length_mm=30.0)},
