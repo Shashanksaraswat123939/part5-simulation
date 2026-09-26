@@ -91,6 +91,15 @@ VARIANTS = {
                          "wheel": dict(dome=1.0)},
     "flap_dome_repeat2": {"front": dict(flap_chord_mm=8.0, flap_aoa_deg=30.0),
                           "wheel": dict(dome=1.0)},
+    # round 7: base is now the film-covered carbon wheel, bodies carved against
+    # each car's own parts. Parametric strut supports vs the v2 CAD pods, and
+    # the round-6 car (capped wheels) for the before/after.
+    "prev_final": {"wheels": "carbon_rim_capped"},
+    "strut": {"support": dict()},
+    "strut_repeat": {"support": dict()},
+    "strut_repeat2": {"support": dict()},
+    "strut_c12": {"support": dict(chord_mm=12.0, t_frac=0.33)},
+    "strut_c20": {"support": dict(chord_mm=20.0, t_frac=0.20)},
     # printed nose cone ahead of Ref A (Part 4 nose.py)
     "nose_20": {"nose": dict()},
     "nose_30": {"nose": dict(length_mm=30.0)},
@@ -104,27 +113,28 @@ def run_variant(name: str, out: Path, res: str, np_: int, keep_runs: bool) -> di
     import assembly as p4
     import legality
     import nose as ns
+    import support as sp
     import wheel as wh
     import wings as wg
     from optimizer_contract import DEFAULT_ROLLING_MU
     v = VARIANTS[name]
     a = argparse.Namespace(
         W=120.3, x_front=46.0, d_halo=43.72, stage1_mm=2.0, stage1_iters=100, cfd_mm=1.0,
-        wheels="carbon_rim_capped", ballast="lead", res=res, np=np_,
+        wheels=v.get("wheels", "carbon_rim_film"), ballast="lead", res=res, np=np_,
         cfd_iters=v.get("cfd_iters", 2000),
         adj_iters=1000, substeps=6, trust_mm=1.0, smooth_mm=0.0, keep_runs=keep_runs)
     out.mkdir(parents=True, exist_ok=True)
-    geom, _ = rc.build_body(a, out)
-    body = rc.export_body(geom, out / "body_half.stl")
     f, r = wh.design(a.wheels)
     wheels = (replace(f, **v.get("wheel", {})), replace(r, **v.get("wheel", {})))
-    asm = p4.build(a.W, a.x_front, a.d_halo, str(out / "body_half.stl"), str(out / "parts"),
-                   wheel_design=wheels, front=replace(wg.FrontWing(), **v.get("front", {})),
-                   rear=replace(wg.RearWing(), **v.get("rear", {})),
-                   nose=replace(ns.NoseCone(), **v["nose"]) if "nose" in v else None)
-    asm["_dir"] = str(out / "parts")
+    # Each variant's body is carved against its own part masses (run_car.build_car).
+    geom, body, asm = rc.build_car(
+        a, out, wheel_design=wheels, front=replace(wg.FrontWing(), **v.get("front", {})),
+        rear=replace(wg.RearWing(), **v.get("rear", {})),
+        nose=replace(ns.NoseCone(), **v["nose"]) if "nose" in v else None,
+        support=replace(sp.Strut(), **v["support"]) if "support" in v else None)
     b = rc.make_bindings(a, out, asm, seed_geom=None)
     ms = rc.mass_state(b, geom)
+    body_mass = {k: x for k, x in ms.items() if not k.startswith("_")}
     chk = legality.check(str(out / "body_half.stl"), asm,
                          {k: x for k, x in ms.items() if not k.startswith("_")},
                          body["field_bodies"])
@@ -134,7 +144,7 @@ def run_variant(name: str, out: Path, res: str, np_: int, keep_runs: bool) -> di
          "T_raw_s": cfd["T_raw_s"], "converged": cfd["converged"], "stderr": cfd["stderr"],
          "parts": cfd["parts"], "wheel_moi_kg_m2": moi,
          "wheel_mass_g": [wheels[0].mass, wheels[1].mass], "parts_mass_g": asm["parts_mass_g"],
-         "legality": legality.summary(chk)}
+         "legality": legality.summary(chk), "mass": body_mass}
     (out / f"sweep_{name}.json").write_text(json.dumps(R, indent=2, default=str))
     rc.log(f"{name}: D20 {R['D20_N']:.5f} N  T {R['T_raw_s']:.5f} s  {R['legality']}")
     return R

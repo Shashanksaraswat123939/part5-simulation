@@ -17,6 +17,7 @@ quantified recommendations.
 python run_car.py --out results/                     # no CFD, ~20 s
 python run_car.py --out results/ --cfd --res medium  # + forward CFD with all parts
 python run_car.py --out results/ --cfd --optimise 4 --final-cfd --res coarse
+python run_car.py --out results/ --cfd --support strut        # parametric supports
 ```
 
 The folders `part1-simulation` … `part4-simulation` must sit beside this one.

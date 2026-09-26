@@ -120,7 +120,9 @@ def check(body_half_stl: str, assembly: dict, mass_state: dict | None = None,
         if name.startswith("wheel"):
             continue
         v = np.asarray(m.vertices)[:: max(1, len(m.vertices) // 4000)]
-        gap = float(body.nearest.on_surface(v)[1].min()) * 1e3
+        # Embedded counts: an extruded strut has vertices only at its ends,
+        # 2 mm inside the body and nowhere near its surface.
+        gap = 0.0 if body.contains(v).any() else float(body.nearest.on_surface(v)[1].min()) * 1e3
         r[f"attached_{name}"] = _entry(0.3 - gap, f"closest {gap:.2f} mm to the body")
 
     # T5.5 chamber wall (probe points inside the body).

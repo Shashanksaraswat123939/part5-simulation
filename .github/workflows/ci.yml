@@ -58,13 +58,15 @@ jobs:
 
   car:
     runs-on: ubuntu-24.04
-    timeout-minutes: 340
+    timeout-minutes: 355
     strategy:
       fail-fast: false
       matrix:
         include:
           - { id: final_optimise_medium, args: "--cfd --optimise 3 --final-cfd --res medium" }
           - { id: final_cfd_medium, args: "--cfd --res medium" }
+          - { id: final_cfd_coarse, args: "--cfd --res coarse" }
+          - { id: final_cfd_fine, args: "--cfd --res fine --stage-timeout-s 17000" }
     env:
       OMPI_MCA_hwloc_base_use_hwthreads_as_cpus: "1"
       OMPI_MCA_rmaps_base_oversubscribe: "1"

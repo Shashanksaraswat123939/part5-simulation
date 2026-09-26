@@ -53,6 +53,33 @@ def build_body(a, out: Path):
                   "spacing_mm": a.cfd_mm}
 
 
+def build_car(a, out: Path, **p4kw):
+    """Body and parts, carved TWICE: Stage 1's hardware masses are Part 1's v2
+    CAD (fixed_hardware), which Part 4's parts do not weigh -- the strut and
+    film wheels are ~5 g lighter -- so the first carve lands at the wrong body
+    mass. The second carves against the real parts."""
+    import assembly as p4
+    import bayesian_outer_search as bos
+    p4kw.setdefault("wheel_design", a.wheels)
+    for pass_ in (1, 2):
+        geom, info = build_body(a, out)
+        info.update(export_body(geom, out / "body_half.stl"))
+        asm = p4.build(a.W, a.x_front, a.d_halo, str(out / "body_half.stl"), str(out / "parts"),
+                       **p4kw)
+        f = asm["fixed_hardware_kwargs"]
+        bos.STUB_WHEEL_FRONT_MASS_KG = f["wheels_front_mass_kg"]
+        bos.STUB_WHEEL_REAR_MASS_KG = f["wheels_rear_mass_kg"]
+        bos.STUB_HALO_MASS_KG = f["halo_mass_kg"]
+        bos.STUB_REAR_WING_MASS_KG = f["rear_wing_mass_kg"]
+    asm["_dir"] = str(out / "parts")
+    return geom, info, asm
+
+
+def part4_kwargs(a) -> dict:
+    import support as sp
+    return {"support": sp.Strut() if getattr(a, "support", "cad") == "strut" else None}
+
+
 def export_body(geom, path: Path) -> dict:
     import unified_phi as up
     from scipy.ndimage import label
@@ -73,11 +100,13 @@ def make_bindings(a, out: Path, asm: dict, seed_geom):
     extra = p4.extra_surfaces_from(str(Path(asm["_dir"]) / "assembly.json"))
     common = {"resolution": a.res, "n_subdomains": a.np, "extra_surfaces": extra,
               "keep_run_dir": a.keep_runs}
+    cfd_extra = ({"stage_timeout_s": a.stage_timeout_s}
+                 if getattr(a, "stage_timeout_s", None) else {})
     return unified_bindings(
         thrust_csv_path=str(PARTS["part2-simulation"] / "co2_thrust_data.csv"),
         fixed_hardware_kwargs=asm["fixed_hardware_kwargs"],
         out_dir=str(out / "records"),
-        cfd_kwargs=dict(common, max_iterations=a.cfd_iters),
+        cfd_kwargs=dict(common, max_iterations=a.cfd_iters, **cfd_extra),
         adjoint_kwargs=dict(common, primal_iters=a.adj_iters, adjoint_iters=a.adj_iters),
         seed_geometry=seed_geom, ballast_material=a.ballast,
         hj_max_substeps=a.substeps, hj_trust_radius_m=a.trust_mm / 1000.0,
@@ -229,7 +258,8 @@ def main(argv=None):
     ap.add_argument("--stage1-mm", type=float, default=2.0)
     ap.add_argument("--stage1-iters", type=int, default=100)
     ap.add_argument("--cfd-mm", type=float, default=1.0)
-    ap.add_argument("--wheels", default="carbon_rim_capped")
+    ap.add_argument("--wheels", default="carbon_rim_film")
+    ap.add_argument("--support", choices=("cad", "strut"), default="cad")
     ap.add_argument("--ballast", default="lead")
     ap.add_argument("--cfd", action="store_true")
     ap.add_argument("--optimise", type=int, default=0)
@@ -242,6 +272,8 @@ def main(argv=None):
     ap.add_argument("--trust-mm", type=float, default=1.0)
     ap.add_argument("--smooth-mm", type=float, default=0.0)
     ap.add_argument("--keep-runs", action="store_true")
+    ap.add_argument("--stage-timeout-s", type=int, default=None,
+                    help="per OpenFOAM stage; fine meshes need more than the 7200 s default")
     a = ap.parse_args(argv)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -253,14 +285,9 @@ def main(argv=None):
 
     S = {"scalars": {"W": a.W, "x_front": a.x_front, "d_halo": a.d_halo},
          "ballast_material": a.ballast, "args": vars(a)}
-    log("1 BODY: Stage-1 carve with ballast")
-    geom, S["body"] = build_body(a, out)
-    S["body"].update(export_body(geom, out / "body_half.stl"))
-
-    log("2 PARTS: Part 4 assembly")
-    asm = p4.build(a.W, a.x_front, a.d_halo, str(out / "body_half.stl"), str(out / "parts"),
-                   wheel_design=a.wheels)
-    asm["_dir"] = str(out / "parts")
+    log("1-2 BODY + PARTS: Stage-1 carve against the real Part 4 masses")
+    p4kw = part4_kwargs(a)
+    geom, S["body"], asm = build_car(a, out, **dict(p4kw))
     S["wheels"] = asm["wheel_design"]
     S["parts_mass_g"] = asm["parts_mass_g"]
 
@@ -272,7 +299,7 @@ def main(argv=None):
     geom = b.initialize_phi_fields(a.W, a.x_front, a.d_halo, 0)
     S["body"].update(export_body(geom, out / "body_half.stl"))
     asm = p4.build(a.W, a.x_front, a.d_halo, str(out / "body_half.stl"), str(out / "parts"),
-                   wheel_design=a.wheels)
+                   wheel_design=a.wheels, **p4kw)
     asm["_dir"] = str(out / "parts")
     S["parts_mass_g"] = asm["parts_mass_g"]
     b = make_bindings(a, out, asm, seed_geom=seed)
@@ -317,7 +344,7 @@ def main(argv=None):
             S["optimisation"]["final_is"] = res.best.candidate_id
         S["body_final"] = export_body(geom, out / "body_final_half.stl")
         asm = p4.build(a.W, a.x_front, a.d_halo, str(out / "body_final_half.stl"),
-                       str(out / "parts_final"), wheel_design=a.wheels)
+                       str(out / "parts_final"), wheel_design=a.wheels, **p4kw)
         asm["_dir"] = str(out / "parts_final")
         ms = mass_state(b, geom)
         S["mass"] = {k: v for k, v in ms.items() if not k.startswith("_")}
