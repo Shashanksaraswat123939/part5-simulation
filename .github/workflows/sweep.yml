@@ -16,8 +16,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [base, base_repeat, base_repeat2, flap_dome, flap_dome_repeat,
-                  flap_dome_repeat2, flap30_repeat, dome1_repeat]
+        variant: [base, base_repeat, reserve_0p5, reserve_0p5_repeat, reserve_3, reserve_3_repeat,
+                  reserve_5, reserve_5_repeat, reserve_8, reserve_8_repeat]
     env:
       OMPI_MCA_hwloc_base_use_hwthreads_as_cpus: "1"
       OMPI_MCA_rmaps_base_oversubscribe: "1"

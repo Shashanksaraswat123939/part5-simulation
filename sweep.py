@@ -100,6 +100,18 @@ VARIANTS = {
     "strut_repeat2": {"support": dict()},
     "strut_c12": {"support": dict(chord_mm=12.0, t_frac=0.33)},
     "strut_c20": {"support": dict(chord_mm=20.0, t_frac=0.20)},
+    # round 8: how lean to carve. The build reserve sets how much ballast the
+    # body leaves room for; round 7's heavier-wheel car carved leaner and had
+    # 19 % less body drag. Ballast is lead in the capsule, so race time at the
+    # 48.2 g target only sees the drag.
+    "reserve_0p5": {"reserve_g": 0.5},
+    "reserve_0p5_repeat": {"reserve_g": 0.5},
+    "reserve_3": {"reserve_g": 3.0},
+    "reserve_3_repeat": {"reserve_g": 3.0},
+    "reserve_5": {"reserve_g": 5.0},
+    "reserve_5_repeat": {"reserve_g": 5.0},
+    "reserve_8": {"reserve_g": 8.0},
+    "reserve_8_repeat": {"reserve_g": 8.0},
     # printed nose cone ahead of Ref A (Part 4 nose.py)
     "nose_20": {"nose": dict()},
     "nose_30": {"nose": dict(length_mm=30.0)},
@@ -124,6 +136,9 @@ def run_variant(name: str, out: Path, res: str, np_: int, keep_runs: bool) -> di
         cfd_iters=v.get("cfd_iters", 2000),
         adj_iters=1000, substeps=6, trust_mm=1.0, smooth_mm=0.0, keep_runs=keep_runs)
     out.mkdir(parents=True, exist_ok=True)
+    if "reserve_g" in v:
+        import ballast
+        ballast.BUILD_RESERVE_KG = v["reserve_g"] / 1e3
     f, r = wh.design(a.wheels)
     wheels = (replace(f, **v.get("wheel", {})), replace(r, **v.get("wheel", {})))
     # Each variant's body is carved against its own part masses (run_car.build_car).
