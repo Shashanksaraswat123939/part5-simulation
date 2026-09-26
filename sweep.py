@@ -55,6 +55,23 @@ VARIANTS = {
     # that fits inside the ~1.5 g of ballast the lighter wings freed?
     "nose_30_thin": {"nose": dict(length_mm=30.0, wall_mm=0.5)},
     "nose_30_thin_repeat": {"nose": dict(length_mm=30.0, wall_mm=0.5)},
+    # round 4 (base = round-2 winners). The rear-wing gain was measured on
+    # unconverged solves: re-run old vs new at 4000 iterations.
+    "base_4k": {"cfd_iters": 4000},
+    "base_4k_repeat": {"cfd_iters": 4000},
+    "rwing_old_4k": {"rear": dict(chord_mm=16.0, t_frac=0.15), "cfd_iters": 4000},
+    "rwing_old_4k_repeat": {"rear": dict(chord_mm=16.0, t_frac=0.15), "cfd_iters": 4000},
+    # hubcap dome size (2 mm gave -0.7 % on the old wings)
+    "wheel_dome_1": {"wheel": dict(dome=1.0)},
+    "wheel_dome_3": {"wheel": dict(dome=3.0)},
+    "wheel_dome_4": {"wheel": dict(dome=4.0)},
+    # front wing at the new +6 deg / minimum section: span, height, gap, flap
+    "fw6_wide": {"front": dict(half_span_mm=42.0)},
+    "fw6_low": {"front": dict(z_chord_mm=7.0)},
+    "fw6_high": {"front": dict(z_chord_mm=10.0)},
+    "fw6_gap8": {"front": dict(gap_to_wheel_mm=8.0)},
+    "fw6_flap20": {"front": dict(flap_chord_mm=8.0, flap_aoa_deg=20.0)},
+    "fw6_flap30": {"front": dict(flap_chord_mm=8.0, flap_aoa_deg=30.0)},
     # printed nose cone ahead of Ref A (Part 4 nose.py)
     "nose_20": {"nose": dict()},
     "nose_30": {"nose": dict(length_mm=30.0)},
@@ -74,7 +91,8 @@ def run_variant(name: str, out: Path, res: str, np_: int, keep_runs: bool) -> di
     v = VARIANTS[name]
     a = argparse.Namespace(
         W=120.3, x_front=46.0, d_halo=43.72, stage1_mm=2.0, stage1_iters=100, cfd_mm=1.0,
-        wheels="carbon_rim_capped", ballast="lead", res=res, np=np_, cfd_iters=2000,
+        wheels="carbon_rim_capped", ballast="lead", res=res, np=np_,
+        cfd_iters=v.get("cfd_iters", 2000),
         adj_iters=1000, substeps=6, trust_mm=1.0, smooth_mm=0.0, keep_runs=keep_runs)
     out.mkdir(parents=True, exist_ok=True)
     geom, _ = rc.build_body(a, out)
