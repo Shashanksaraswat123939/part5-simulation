@@ -264,7 +264,18 @@ def main(argv=None):
     S["wheels"] = asm["wheel_design"]
     S["parts_mass_g"] = asm["parts_mass_g"]
 
-    b = make_bindings(a, out, asm, seed_geom=copy.deepcopy(geom))
+    seed = copy.deepcopy(geom)
+    b = make_bindings(a, out, asm, seed_geom=seed)
+    # Measure exactly what the optimiser starts from. Its start is one more
+    # remap of the seed, and measuring the pre-remap body put the initial D20
+    # 1-2 % away from iteration 1's (2026-09-26). Parts are re-placed on it.
+    geom = b.initialize_phi_fields(a.W, a.x_front, a.d_halo, 0)
+    S["body"].update(export_body(geom, out / "body_half.stl"))
+    asm = p4.build(a.W, a.x_front, a.d_halo, str(out / "body_half.stl"), str(out / "parts"),
+                   wheel_design=a.wheels)
+    asm["_dir"] = str(out / "parts")
+    S["parts_mass_g"] = asm["parts_mass_g"]
+    b = make_bindings(a, out, asm, seed_geom=seed)
     ms = mass_state(b, geom)
     S["mass"] = {k: v for k, v in ms.items() if not k.startswith("_")}
 
@@ -275,7 +286,11 @@ def main(argv=None):
 
     if a.cfd:
         log("4 CFD: forward, all patches")
-        S["cfd_initial"] = cfd_and_objective(b, out / "body_half.stl", ms, moi, mu)
+        # The same decimated STL the optimiser's gate would mesh.
+        gate = b.run_quality_gates(copy.deepcopy(geom), "initial", str(out / "gates"))
+        if not gate.stl_half_path:
+            raise SystemExit(f"initial body failed the CFD gate: {gate.failure_reason}")
+        S["cfd_initial"] = cfd_and_objective(b, Path(gate.stl_half_path), ms, moi, mu)
         designs = {n: wh.mean_inertia_kg_m2(n) for n in wh.DESIGNS}
         designs["_current"] = moi
         S["whatif"] = what_if(b, ms, S["cfd_initial"], mu, designs)
@@ -288,7 +303,7 @@ def main(argv=None):
                               cfd_pipeline_validated_on_known_geometry=False,
                               mu=mu, wheel_moi_kg_m2=moi, iteration_budget=a.optimise,
                               evolution_interval_iters=a.optimise)
-        start = b.initialize_phi_fields(a.W, a.x_front, a.d_halo, 0)
+        start = copy.deepcopy(geom)
         res = run_inner_loop(b, cfg, "car", a.W, a.x_front, a.d_halo, start,
                              str(out / "records"), GradientWeights(1.0, 1.0, 0.0, 0.0))
         S["optimisation"] = {"iterations": res.iterations_run, "stop_reason": res.stop_reason,

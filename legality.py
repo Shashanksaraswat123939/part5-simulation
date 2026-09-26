@@ -43,7 +43,11 @@ def t55_wall_fraction(body_half, rear_face_mm: float, depth_mm: float = 50.0,
     """Fraction of probe points inside the body in the 3 mm annulus around the
     chamber, over the 45 mm minimum depth (T5.5). 1.0 = a full 3 mm wall."""
     xs = np.linspace(rear_face_mm - depth_mm + 2.0, rear_face_mm - depth_mm + 45.0, 12)
-    rs = (bore_r_mm + 0.5, bore_r_mm + 1.5, bore_r_mm + 2.5)
+    # From 1 mm outside the bore: the bore is a fixed air mask the optimiser
+    # cannot touch, and on a 1 mm voxel STL its facets bulge ~0.5 mm at 45 deg
+    # (every miss on the 2026-09-26 optimised car was r = 9.5 at 47/133 deg).
+    # The wall the optimiser CAN thin is the outside, probed to 2.9 mm.
+    rs = (bore_r_mm + 1.0, bore_r_mm + 2.0, bore_r_mm + 2.9)
     # Right half, but NOT on the symmetry plane itself: a containment test on
     # the capped y=0 face is ambiguous and reported false misses at 0/180 deg.
     ang = np.linspace(0.08, math.pi - 0.08, 13)
