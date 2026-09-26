@@ -84,6 +84,13 @@ VARIANTS = {
                       "rear": dict(chord_mm=16.0, t_frac=0.15)},
     "final_nodome": {"front": dict(flap_chord_mm=8.0, flap_aoa_deg=30.0),
                      "rear": dict(chord_mm=16.0, t_frac=0.15)},
+    # round 6: round 5 showed the old rear wing undoes the flap (flap + old
+    # rear 0.401 N vs flap alone 0.394). Flap + dome on the minimum rear wing.
+    "flap_dome": {"front": dict(flap_chord_mm=8.0, flap_aoa_deg=30.0), "wheel": dict(dome=1.0)},
+    "flap_dome_repeat": {"front": dict(flap_chord_mm=8.0, flap_aoa_deg=30.0),
+                         "wheel": dict(dome=1.0)},
+    "flap_dome_repeat2": {"front": dict(flap_chord_mm=8.0, flap_aoa_deg=30.0),
+                          "wheel": dict(dome=1.0)},
     # printed nose cone ahead of Ref A (Part 4 nose.py)
     "nose_20": {"nose": dict()},
     "nose_30": {"nose": dict(length_mm=30.0)},
