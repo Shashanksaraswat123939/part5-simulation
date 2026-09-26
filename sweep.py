@@ -50,6 +50,11 @@ VARIANTS = {
                  "rear": dict(chord_mm=15.0, t_frac=0.14), "wheel": dict(dome=2.0)},
     "combo_p9": {"front": dict(chord_mm=15.0, t_frac=0.14, aoa_deg=9.0),
                  "rear": dict(chord_mm=15.0, t_frac=0.14), "wheel": dict(dome=2.0)},
+    # round 3: base is now the round-2 wing winners (Part 4 defaults); does
+    # the 30 mm nose (-7.4 % on the old wings) still pay, at a 0.5 mm wall
+    # that fits inside the ~1.5 g of ballast the lighter wings freed?
+    "nose_30_thin": {"nose": dict(length_mm=30.0, wall_mm=0.5)},
+    "nose_30_thin_repeat": {"nose": dict(length_mm=30.0, wall_mm=0.5)},
     # printed nose cone ahead of Ref A (Part 4 nose.py)
     "nose_20": {"nose": dict()},
     "nose_30": {"nose": dict(length_mm=30.0)},
