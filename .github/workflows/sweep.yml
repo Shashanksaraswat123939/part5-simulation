@@ -16,9 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [base, base_repeat, wheel_round_out, wheel_round_both, wheel_dome,
-                  wheel_round_out_dome, fwing_aoa_p6, fwing_aoa_m6, fwing_high, fwing_wide,
-                  fwing_min, rwing_min]
+        variant: [base, base_repeat, nose_20, nose_30, nose_20_sharp, nose_20_droop, nose_20_boxy]
     env:
       OMPI_MCA_hwloc_base_use_hwthreads_as_cpus: "1"
       OMPI_MCA_rmaps_base_oversubscribe: "1"

@@ -38,12 +38,19 @@ VARIANTS = {
     "fwing_min": {"front": dict(chord_mm=15.0, t_frac=0.14)},
     # rear wing: minimum legal section
     "rwing_min": {"rear": dict(chord_mm=15.0, t_frac=0.14)},
+    # printed nose cone ahead of Ref A (Part 4 nose.py)
+    "nose_20": {"nose": dict()},
+    "nose_30": {"nose": dict(length_mm=30.0)},
+    "nose_20_sharp": {"nose": dict(k=0.75)},
+    "nose_20_droop": {"nose": dict(tip_z_mm=7.0)},
+    "nose_20_boxy": {"nose": dict(p=4.0)},
 }
 
 
 def run_variant(name: str, out: Path, res: str, np_: int, keep_runs: bool) -> dict:
     import assembly as p4
     import legality
+    import nose as ns
     import wheel as wh
     import wings as wg
     from optimizer_contract import DEFAULT_ROLLING_MU
@@ -59,7 +66,8 @@ def run_variant(name: str, out: Path, res: str, np_: int, keep_runs: bool) -> di
     wheels = (replace(f, **v.get("wheel", {})), replace(r, **v.get("wheel", {})))
     asm = p4.build(a.W, a.x_front, a.d_halo, str(out / "body_half.stl"), str(out / "parts"),
                    wheel_design=wheels, front=replace(wg.FrontWing(), **v.get("front", {})),
-                   rear=replace(wg.RearWing(), **v.get("rear", {})))
+                   rear=replace(wg.RearWing(), **v.get("rear", {})),
+                   nose=replace(ns.NoseCone(), **v["nose"]) if "nose" in v else None)
     asm["_dir"] = str(out / "parts")
     b = rc.make_bindings(a, out, asm, seed_geom=None)
     ms = rc.mass_state(b, geom)
@@ -88,12 +96,12 @@ def summarise(root: Path) -> str:
     T0 = sum(x["T_raw_s"] for x in bases) / len(bases)
     noise = (abs(bases[0]["D20_N"] - bases[-1]["D20_N"]) / D0 * 100) if len(bases) == 2 else float("nan")
     out = [f"base D20 {D0:.4f} N, T {T0:.4f} s; base vs repeat {noise:.2f} % (the noise floor)", "",
-           "| variant | D20 N | dD20 % | dT ms | wheel I g.mm2 | legal | wheels / wings drag N |",
+           "| variant | D20 N | dD20 % | dT ms | wheel I g.mm2 | legal | wheels / wings+nose drag N |",
            "|---|---|---|---|---|---|---|"]
     for r in sorted(rows, key=lambda x: x["T_raw_s"]):
         p = r["parts"]
         wd = sum(p.get(k, {}).get("D_N", 0) for k in ("wheelF", "wheelR"))
-        gd = sum(p.get(k, {}).get("D_N", 0) for k in ("fwing", "rwing"))
+        gd = sum(p.get(k, {}).get("D_N", 0) for k in ("fwing", "rwing", "nose"))
         leg = "yes" if r["legality"]["n_failed"] == 0 else ",".join(r["legality"]["failed"])
         out.append(f"| {r['variant']} | {r['D20_N']:.4f} | {100 * (r['D20_N'] / D0 - 1):+.2f} | "
                    f"{1e3 * (r['T_raw_s'] - T0):+.2f} | {r['wheel_moi_kg_m2'] * 1e9:.1f} | {leg} | "
