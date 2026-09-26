@@ -1,0 +1,70 @@
+name: sweep
+
+# Wheel and wing variants on a fixed body, real OpenFOAM, medium mesh. See sweep.py.
+on:
+  workflow_dispatch:
+  push:
+    branches: ["sweep/**"]
+
+env:
+  PY_DEPS: pytest numpy scipy pandas trimesh scikit-image shapely rtree mapbox-earcut manifold3d fast_simplification jax jaxlib matplotlib
+
+jobs:
+  variant:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 200
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [base, base_repeat, wheel_round_out, wheel_round_both, wheel_dome,
+                  wheel_round_out_dome, fwing_aoa_p6, fwing_aoa_m6, fwing_high, fwing_wide,
+                  fwing_min, rwing_min]
+    env:
+      OMPI_MCA_hwloc_base_use_hwthreads_as_cpus: "1"
+      OMPI_MCA_rmaps_base_oversubscribe: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: part5-simulation }
+      - uses: actions/checkout@v4
+        with: { repository: Shashanksaraswat123939/part4-simulation, path: part4-simulation }
+      - uses: actions/checkout@v4
+        with: { repository: Shashanksaraswat123939/part1-simulation, path: part1-simulation }
+      - uses: actions/checkout@v4
+        with: { repository: Shashanksaraswat123939/part2-simulation, path: part2-simulation }
+      - uses: actions/checkout@v4
+        with: { repository: Shashanksaraswat123939/part3-simulation, path: part3-simulation }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install $PY_DEPS
+      - name: Install ESI OpenFOAM v2412
+        run: |
+          curl -s https://dl.openfoam.com/add-debian-repo.sh | sudo bash
+          sudo apt-get install -y openfoam2412-default
+      - name: Run ${{ matrix.variant }}
+        working-directory: part5-simulation
+        run: python sweep.py --variant ${{ matrix.variant }} --out ../out/${{ matrix.variant }} --res medium --np 4
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sweep-${{ matrix.variant }}
+          path: |
+            out/${{ matrix.variant }}/sweep_*.json
+            out/${{ matrix.variant }}/parts/*.json
+
+  summary:
+    needs: variant
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: part5-simulation }
+      - uses: actions/download-artifact@v4
+        with: { pattern: "sweep-*", path: results }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: |
+          cd part5-simulation
+          python -c "import sys; sys.modules['paths']=type(sys)('paths'); sys.modules['run_car']=type(sys)('run_car'); import sweep; print(sweep.summarise(__import__('pathlib').Path('../results')))" | tee ../SWEEP.md
+          cat ../SWEEP.md >> $GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v4
+        with: { name: SWEEP, path: SWEEP.md }
