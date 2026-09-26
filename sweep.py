@@ -38,6 +38,18 @@ VARIANTS = {
     "fwing_min": {"front": dict(chord_mm=15.0, t_frac=0.14)},
     # rear wing: minimum legal section
     "rwing_min": {"rear": dict(chord_mm=15.0, t_frac=0.14)},
+    # round 2 (2026-09-26): +6 deg cut the front-wheel drag 10 %; map the
+    # incidence, re-run the unconverged rear wing, and combine the winners
+    "base_repeat2": {},
+    "fwing_aoa_p3": {"front": dict(aoa_deg=3.0)},
+    "fwing_aoa_p9": {"front": dict(aoa_deg=9.0)},
+    "fwing_aoa_p12": {"front": dict(aoa_deg=12.0, z_chord_mm=9.0)},   # 8 mm breaks T8.7
+    "fwing_min_aoa_p6": {"front": dict(chord_mm=15.0, t_frac=0.14, aoa_deg=6.0)},
+    "rwing_min_repeat": {"rear": dict(chord_mm=15.0, t_frac=0.14)},
+    "combo_p6": {"front": dict(chord_mm=15.0, t_frac=0.14, aoa_deg=6.0),
+                 "rear": dict(chord_mm=15.0, t_frac=0.14), "wheel": dict(dome=2.0)},
+    "combo_p9": {"front": dict(chord_mm=15.0, t_frac=0.14, aoa_deg=9.0),
+                 "rear": dict(chord_mm=15.0, t_frac=0.14), "wheel": dict(dome=2.0)},
     # printed nose cone ahead of Ref A (Part 4 nose.py)
     "nose_20": {"nose": dict()},
     "nose_30": {"nose": dict(length_mm=30.0)},
@@ -89,13 +101,16 @@ def run_variant(name: str, out: Path, res: str, np_: int, keep_runs: bool) -> di
 def summarise(root: Path) -> str:
     rows = [json.loads(p.read_text()) for p in sorted(root.rglob("sweep_*.json"))]
     by = {r["variant"]: r for r in rows}
-    bases = [by[k] for k in ("base", "base_repeat") if k in by]
+    bases = [by[k] for k in ("base", "base_repeat", "base_repeat2") if k in by]
     if not bases:
         return "no base run"
     D0 = sum(x["D20_N"] for x in bases) / len(bases)
     T0 = sum(x["T_raw_s"] for x in bases) / len(bases)
-    noise = (abs(bases[0]["D20_N"] - bases[-1]["D20_N"]) / D0 * 100) if len(bases) == 2 else float("nan")
-    out = [f"base D20 {D0:.4f} N, T {T0:.4f} s; base vs repeat {noise:.2f} % (the noise floor)", "",
+    ds = [x["D20_N"] for x in bases]
+    noise = (max(ds) - min(ds)) / D0 * 100 if len(ds) > 1 else float("nan")
+    out = [f"base D20 {D0:.4f} N, T {T0:.4f} s; spread of {len(ds)} identical base runs "
+           f"{noise:.2f} % (the noise floor). dT includes part mass: the base car is "
+           f"above the 48 g target, so grams count here; after ballast they would not.", "",
            "| variant | D20 N | dD20 % | dT ms | wheel I g.mm2 | legal | wheels / wings+nose drag N |",
            "|---|---|---|---|---|---|---|"]
     for r in sorted(rows, key=lambda x: x["T_raw_s"]):
