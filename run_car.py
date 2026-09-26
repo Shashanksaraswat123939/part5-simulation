@@ -293,7 +293,13 @@ def main(argv=None):
                              str(out / "records"), GradientWeights(1.0, 1.0, 0.0, 0.0))
         S["optimisation"] = {"iterations": res.iterations_run, "stop_reason": res.stop_reason,
                              "history": [h.__dict__ for h in res.history]}
+        # The BEST measured iterate, not the loop's last state: that one is the
+        # geometry after the final update, which no CFD ever saw. On 2026-09-26
+        # every aero-only step raised D20, so "last" was reliably the worst.
         geom = res.final_phi_grids
+        if res.best is not None and res.best.phi_snapshot_paths:
+            geom.phi.load(next(iter(res.best.phi_snapshot_paths.values())))
+            S["optimisation"]["final_is"] = res.best.candidate_id
         S["body_final"] = export_body(geom, out / "body_final_half.stl")
         asm = p4.build(a.W, a.x_front, a.d_halo, str(out / "body_final_half.stl"),
                        str(out / "parts_final"), wheel_design=a.wheels)

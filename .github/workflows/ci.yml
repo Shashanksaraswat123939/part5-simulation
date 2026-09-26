@@ -64,10 +64,8 @@ jobs:
       matrix:
         include:
           - { id: optimise_coarse_s4, args: "--cfd --optimise 4 --final-cfd --res coarse --smooth-mm 4" }
-          - { id: sign_check_a, script: sign_check.py, args: "--res coarse --smooth-mm 4" }
-          - { id: sign_check_b, script: sign_check.py, args: "--res coarse --smooth-mm 4" }
-          - { id: sign_check_c, script: sign_check.py, args: "--res coarse --smooth-mm 4" }
-          - { id: sign_check_t2, script: sign_check.py, args: "--res coarse --smooth-mm 4 --trust-mm 2" }
+          - { id: sign_check_null, script: sign_check.py, args: "--res coarse --smooth-mm 4" }
+          - { id: cfd_medium, args: "--cfd --res medium" }
     env:
       OMPI_MCA_hwloc_base_use_hwthreads_as_cpus: "1"
       OMPI_MCA_rmaps_base_oversubscribe: "1"

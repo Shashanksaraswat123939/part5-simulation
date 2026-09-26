@@ -67,7 +67,9 @@ def main(argv=None):
     R = {"base": R}
     rc.log("adjoint")
     adj = b.run_adjoint(gate.stl_half_path, 1.0)
-    for sign, tag in ((1.0, "descent"), (-1.0, "ascent")):
+    # "null": a zero-velocity step, so reinit + machinability + re-extraction
+    # alone. On 2026-09-26 the car patch gained 6-18 % drag in all 16 +/- arms.
+    for sign, tag in ((1.0, "descent"), (-1.0, "ascent"), (0.0, "null")):
         g = copy.deepcopy(geom)
         diag = b.update_phi(g, sign * adj.sensitivity, adj.half_mesh, 1.0, aero_only, grads, m)
         _, R[tag] = solve(g, tag)
@@ -76,6 +78,7 @@ def main(argv=None):
     R["verdict"] = {
         "descent_pct": 100 * (R["descent"]["D20"] / d0 - 1),
         "ascent_pct": 100 * (R["ascent"]["D20"] / d0 - 1),
+        "null_pct": 100 * (R["null"]["D20"] / d0 - 1),
         "sign_ok": bool(R["descent"]["D20"] < d0 < R["ascent"]["D20"]),
     }
     (out / "sign_check.json").write_text(json.dumps(R, indent=2, default=str))
