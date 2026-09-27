@@ -38,6 +38,13 @@ def log(msg: str) -> None:
 # --------------------------------------------------------------------------- body
 def build_body(a, out: Path):
     from coarse import use_spacing
+    if getattr(a, "body_json", None):
+        # Parametric body (Part 1 param_body): drawn, not carved.
+        import param_body as pb
+        use_spacing(a.cfd_mm)
+        bp = pb.BodyParams.from_dict(json.loads(a.body_json))
+        return pb.build(a.W, a.x_front, a.d_halo, bp), {"param_body": bp.as_dict(),
+                                                         "spacing_mm": a.cfd_mm}
     use_spacing(a.stage1_mm)
     import bayesian_outer_search as bos
     import unified_phi as up
@@ -260,6 +267,8 @@ def main(argv=None):
     ap.add_argument("--cfd-mm", type=float, default=1.0)
     ap.add_argument("--wheels", default="carbon_rim_film")
     ap.add_argument("--support", choices=("cad", "strut"), default="cad")
+    ap.add_argument("--body-json", default=None,
+                    help="parametric body (Part 1 param_body.BodyParams) as JSON; '{}' = defaults")
     ap.add_argument("--ballast", default="lead")
     ap.add_argument("--cfd", action="store_true")
     ap.add_argument("--optimise", type=int, default=0)
