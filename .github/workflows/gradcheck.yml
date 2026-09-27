@@ -1,0 +1,86 @@
+name: gradcheck
+
+# Hybrid optimiser gradient check (hybrid.py): does the adjoint, projected onto
+# the sculpt modes, predict what real CFD measures? Base car twice, each check
+# mode at +/-2 mm (skin held fixed), and the adjoint + gradient, in parallel.
+on:
+  workflow_dispatch:
+  push:
+    branches: ["gradcheck/**"]
+
+env:
+  PY_DEPS: pytest numpy scipy pandas trimesh scikit-image shapely rtree mapbox-earcut manifold3d fast_simplification jax jaxlib matplotlib
+
+jobs:
+  setup:
+    runs-on: ubuntu-24.04
+    outputs:
+      ids: ${{ steps.p.outputs.ids }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: p
+        run: echo "ids=$(python3 -c 'import json;print(json.dumps([c["id"] for c in json.load(open("gradcheck/cases.json"))["cases"]]))')" >> $GITHUB_OUTPUT
+
+  car:
+    needs: setup
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        job: ${{ fromJSON(format('["adjoint",{0}]', join(fromJSON(needs.setup.outputs.ids), ','))) }}
+    env:
+      OMPI_MCA_hwloc_base_use_hwthreads_as_cpus: "1"
+      OMPI_MCA_rmaps_base_oversubscribe: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: part5-simulation }
+      - uses: actions/checkout@v4
+        with: { repository: Shashanksaraswat123939/part4-simulation, ref: manufacture/v1, path: part4-simulation }
+      - uses: actions/checkout@v4
+        with: { repository: Shashanksaraswat123939/part1-simulation, ref: manufacture/v1, path: part1-simulation }
+      - uses: actions/checkout@v4
+        with: { repository: Shashanksaraswat123939/part2-simulation, path: part2-simulation }
+      - uses: actions/checkout@v4
+        with: { repository: Shashanksaraswat123939/part3-simulation, path: part3-simulation }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install $PY_DEPS
+      - name: Install ESI OpenFOAM v2412
+        run: |
+          curl -s https://dl.openfoam.com/add-debian-repo.sh | sudo bash
+          sudo apt-get install -y openfoam2412-default
+      - name: ${{ matrix.job }}
+        working-directory: part5-simulation
+        run: |
+          if [ "${{ matrix.job }}" = "adjoint" ]; then
+            python hybrid.py adjoint --plan gradcheck/cases.json --out ../out/adjoint
+          else
+            python hybrid.py eval --plan gradcheck/cases.json --case ${{ matrix.job }} --out ../out/c${{ matrix.job }}
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gc-${{ matrix.job }}
+          path: |
+            out/*/gc_case_*.json
+            out/*/gradient.json
+            out/*/adjoint.npz
+            out/*/summary.json
+
+  report:
+    needs: car
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { pattern: "gc-*", path: results }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: |
+          pip install numpy
+          python -c "import sys; sys.modules['paths']=type(sys)('paths'); import hybrid; print(hybrid.report(__import__('pathlib').Path('results')))" | tee GC.md
+          cat GC.md >> $GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v4
+        with: { name: GC, path: GC.md }

@@ -132,7 +132,7 @@ def run_variant(name: str, out: Path, res: str, np_: int, keep_runs: bool) -> di
     v = VARIANTS[name]
     a = argparse.Namespace(
         W=120.3, x_front=46.0, d_halo=43.72, stage1_mm=2.0, stage1_iters=100, cfd_mm=1.0,
-        wheels=v.get("wheels", "carbon_rim_film"), ballast="lead", res=res, np=np_,
+        wheels=v.get("wheels", "team_stl"), ballast="lead", res=res, np=np_,
         cfd_iters=v.get("cfd_iters", 2000),
         adj_iters=1000, substeps=6, trust_mm=1.0, smooth_mm=0.0, keep_runs=keep_runs)
     out.mkdir(parents=True, exist_ok=True)

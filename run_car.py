@@ -44,7 +44,8 @@ def build_body(a, out: Path):
         use_spacing(a.cfd_mm)
         bp = pb.BodyParams.from_dict(json.loads(a.body_json))
         g = pb.build(a.W, a.x_front, a.d_halo, bp,
-                     target_body_kg=getattr(a, "_body_target_kg", None))
+                     target_body_kg=getattr(a, "_body_target_kg", None),
+                     skin_offset_mm=getattr(a, "skin_mm", None))
         return g, {"param_body": bp.as_dict(), "spacing_mm": a.cfd_mm,
                    "build": getattr(g, "build_report", {})}
     use_spacing(a.stage1_mm)
@@ -125,6 +126,8 @@ def build_car(a, out: Path, **p4kw):
         log(f"  pass {pass_}: body target {new*1e3:.2f} g; joints "
             + ", ".join(f"{k} {v*1e3:+.2f}" for k, v in asm["joints"]["mass_delta_kg"].items())
             + f"; supports each {[round(x, 2) for x in asm['info'].get('support_mass_g_each', [])]}")
+        if getattr(a, "skin_mm", None) is not None:
+            break                                  # fixed skin: nothing to iterate
         # the joints (pocket plugs) depend on the body the target sizes, so
         # iterate to a fixed point; the level-set carve needs only two passes
         if pass_ >= 2 and (not getattr(a, "body_json", None)
@@ -143,7 +146,17 @@ def part4_kwargs(a) -> dict:
     sup = {"cad": None, "strut": sp.Strut(), "beam": bsm.BeamSupport()}[kind]
     if kind == "beam" and getattr(a, "support_json", None):
         sup = bsm.BeamSupport(**json.loads(a.support_json))
-    return {"support": sup}
+    kw = {"support": sup}
+    if getattr(a, "body_json", None):
+        # The parametric body ends at Ref A; the nose cone is a printed SLS
+        # PA12 shell (team spec 2026-09-27) whose root takes the body's section
+        # 1 mm aft of Ref A and sits in a short pocket.
+        import nose as ns
+        nk = dict(blend_after_ref_a_mm=1.0, root_scale=1.0, material="PA12", wall_mm=0.8)
+        if getattr(a, "nose_json", None):
+            nk.update(json.loads(a.nose_json))
+        kw["nose"] = ns.NoseCone(**nk)
+    return kw
 
 
 def export_body(geom, path: Path) -> dict:
@@ -325,10 +338,13 @@ def main(argv=None):
     ap.add_argument("--stage1-mm", type=float, default=2.0)
     ap.add_argument("--stage1-iters", type=int, default=100)
     ap.add_argument("--cfd-mm", type=float, default=1.0)
-    ap.add_argument("--wheels", default="carbon_rim_film")
+    ap.add_argument("--wheels", default="team_stl")
     ap.add_argument("--support", choices=("cad", "strut", "beam"), default="cad",
                     help="cad = team v2 supports (reference); beam = the same architecture, parametric")
     ap.add_argument("--support-json", default=None, help="BeamSupport parameters as JSON")
+    ap.add_argument("--nose-json", default=None, help="NoseCone parameters as JSON (parametric body)")
+    ap.add_argument("--skin-mm", type=float, default=None,
+                    help="fixed skin offset: no mass sizing (gradient checks)")
     ap.add_argument("--body-json", default=None,
                     help="parametric body (Part 1 param_body.BodyParams) as JSON; '{}' = defaults")
     ap.add_argument("--ballast", default="none",
