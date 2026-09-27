@@ -59,7 +59,9 @@ def t55_wall_fraction(body_half, rear_face_mm: float, depth_mm: float = 50.0,
 
 
 def check(body_half_stl: str, assembly: dict, mass_state: dict | None = None,
-          field_bodies: int | None = None) -> dict:
+          field_bodies: int | None = None, machined_stl: str | None = None) -> dict:
+    """machined_stl: the milled body (pockets cut, nose removed, Part 4
+    joints.py). T5.5 is probed on it -- a pocket must not thin the wall."""
     import trimesh
     W, xf = assembly["W_mm"], assembly["x_front_mm"]
     ref_a, ref_b = xf - 16.0, xf + W + 16.0
@@ -126,7 +128,8 @@ def check(body_half_stl: str, assembly: dict, mass_state: dict | None = None,
         r[f"attached_{name}"] = _entry(0.3 - gap, f"closest {gap:.2f} mm to the body")
 
     # T5.5 chamber wall (probe points inside the body).
-    frac = t55_wall_fraction(body, rear_face_mm=milled[:, 0].max())
+    probe_body = trimesh.load(machined_stl, force="mesh") if machined_stl else body
+    frac = t55_wall_fraction(probe_body, rear_face_mm=milled[:, 0].max())
     r["T5.5_wall"] = _entry(0.0 if frac >= 0.999 else -(1 - frac) * REGS["T5.5_wall"],
                             f"{100*frac:.1f}% of the 3 mm annulus is solid")
 
@@ -137,6 +140,9 @@ def check(body_half_stl: str, assembly: dict, mass_state: dict | None = None,
         if "capacity_g" in mass_state:
             r["T1.22_ballast_capacity"] = _entry(mass_state["capacity_g"] - mass_state["ballast_g"])
 
+    j = assembly.get("joints")
+    if j is not None:
+        r["manufacture_machined_body_closed"] = _entry(0.0 if j["machined_body_watertight"] else -1.0)
     for k, m in assembly.get("gates", {}).items():
         r[f"P4.{k}"] = _entry(m)
     return r

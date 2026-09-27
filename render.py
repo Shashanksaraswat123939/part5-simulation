@@ -55,7 +55,6 @@ def render(out: Path, png: Path = None) -> Path:
     fig = plt.figure(figsize=(16, 9))
     allv = np.vstack([m.vertices for m in full.values()]) * 1e3
     lo, hi = allv.min(0), allv.max(0)
-    c, r = (lo + hi) / 2, (hi - lo).max() / 2
     for n, (name, el, az) in enumerate(views):
         ax = fig.add_subplot(2, 2, n + 1, projection="3d", proj_type="ortho")
         for k, m in full.items():
@@ -64,10 +63,10 @@ def render(out: Path, png: Path = None) -> Path:
             base = np.array(matplotlib.colors.to_rgb(COLOURS.get(k, "#888888")))
             ax.add_collection3d(Poly3DCollection(tri, facecolors=base * shade[:, None],
                                                  edgecolors="none"))
-        ax.set_xlim(c[0] - r, c[0] + r)
-        ax.set_ylim(c[1] - r, c[1] + r)
-        ax.set_zlim(c[2] - r, c[2] + r)
-        ax.set_box_aspect((1, 1, 1))
+        ax.set_xlim(lo[0], hi[0])
+        ax.set_ylim(lo[1], hi[1])
+        ax.set_zlim(lo[2], hi[2])
+        ax.set_box_aspect(tuple(hi - lo), zoom=1.0)
         ax.view_init(el, az)
         ax.set_axis_off()
         ax.set_title(name)

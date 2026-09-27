@@ -43,11 +43,14 @@ def build_body(a, out: Path):
         import param_body as pb
         use_spacing(a.cfd_mm)
         bp = pb.BodyParams.from_dict(json.loads(a.body_json))
-        return pb.build(a.W, a.x_front, a.d_halo, bp), {"param_body": bp.as_dict(),
-                                                         "spacing_mm": a.cfd_mm}
+        g = pb.build(a.W, a.x_front, a.d_halo, bp,
+                     target_body_kg=getattr(a, "_body_target_kg", None))
+        return g, {"param_body": bp.as_dict(), "spacing_mm": a.cfd_mm,
+                   "build": getattr(g, "build_report", {})}
     use_spacing(a.stage1_mm)
     import bayesian_outer_search as bos
     import unified_phi as up
+    bos.BALLAST_MATERIAL = None if a.ballast == "none" else a.ballast
     res, geom = bos._level2_evaluate_unified(
         a.W, a.x_front, a.d_halo, n_iters=a.stage1_iters,
         output_dir=str(out / "stage1"), eval_id=0, return_geom=True)
@@ -56,29 +59,71 @@ def build_body(a, out: Path):
     use_spacing(a.cfd_mm)
     geom = up.remap_geometry(geom)
     up.enforce_symmetry(geom)
+    import machining
+    rep = machining.make_machinable(geom)          # the team's mill must cut it
+    up.enforce_symmetry(geom)
     return geom, {"stage1_mass_g": res.mass_kg * 1e3, "stage1_T_proxy": res.race_time,
-                  "spacing_mm": a.cfd_mm}
+                  "spacing_mm": a.cfd_mm, "build": rep}
+
+
+def parts_and_joints(a, out: Path, geom, body_stl: Path, parts_dir: str, **p4kw) -> dict:
+    """Part 4 parts on this body, then the joints: every printed part becomes a
+    positive glued into a milled pocket (Part 4 joints.py). The mass the
+    joints move (plastic plugs for foam, buried CAD trimmed off) goes into the
+    hardware masses the rollup uses. Manufacturing files go to out/manufacture."""
+    import assembly as p4
+    import joints
+    asm = p4.build(a.W, a.x_front, a.d_halo, str(body_stl), str(out / parts_dir), **p4kw)
+    asm["_dir"] = str(out / parts_dir)
+    import trimesh
+    lm = geom.landmarks
+    jr = joints.make_all(trimesh.load(str(body_stl), force="mesh"), asm,
+                         lm["ref_plane_A_m"] * 1e3, lm["rear_face_m"] * 1e3,
+                         out / "manufacture")
+    f, d = asm["fixed_hardware_kwargs"], jr["mass_delta_kg"]
+    sup = d.get("supports", 0.0)
+    f["wheels_front_mass_kg"] += sup / 2
+    f["wheels_rear_mass_kg"] += sup / 2
+    f["wheels_axles_mass_kg"] += sup
+    f["rear_wing_mass_kg"] += sum(v for k, v in d.items() if k != "supports")
+    asm["joints"] = jr
+    return asm
+
+
+def body_target_kg(asm) -> float:
+    """No ballast: the body carries whatever the T3.6 floor (+0.2 g) needs."""
+    import ballast
+    f = asm["fixed_hardware_kwargs"]
+    return ballast.target_competition_kg() - (f["wheels_front_mass_kg"] + f["wheels_rear_mass_kg"]
+                                              + f["halo_mass_kg"] + f["rear_wing_mass_kg"])
 
 
 def build_car(a, out: Path, **p4kw):
-    """Body and parts, carved TWICE: Stage 1's hardware masses are Part 1's v2
-    CAD (fixed_hardware), which Part 4's parts do not weigh -- the strut and
-    film wheels are ~5 g lighter -- so the first carve lands at the wrong body
-    mass. The second carves against the real parts."""
-    import assembly as p4
+    """Body and parts, built TWICE: the body's mass target depends on the parts
+    and joints, which depend on the body. Stage 1 (level-set) carves against the
+    real part masses the second time; a parametric body is sized to them."""
     import bayesian_outer_search as bos
     p4kw.setdefault("wheel_design", a.wheels)
-    for pass_ in (1, 2):
+    target = None
+    for pass_ in range(1, 5):
+        prev = target
+        a._body_target_kg = target
         geom, info = build_body(a, out)
         info.update(export_body(geom, out / "body_half.stl"))
-        asm = p4.build(a.W, a.x_front, a.d_halo, str(out / "body_half.stl"), str(out / "parts"),
-                       **p4kw)
+        asm = parts_and_joints(a, out, geom, out / "body_half.stl", "parts", **p4kw)
         f = asm["fixed_hardware_kwargs"]
         bos.STUB_WHEEL_FRONT_MASS_KG = f["wheels_front_mass_kg"]
         bos.STUB_WHEEL_REAR_MASS_KG = f["wheels_rear_mass_kg"]
         bos.STUB_HALO_MASS_KG = f["halo_mass_kg"]
         bos.STUB_REAR_WING_MASS_KG = f["rear_wing_mass_kg"]
-    asm["_dir"] = str(out / "parts")
+        target = body_target_kg(asm)
+        # the joints (pocket plugs) depend on the body the target sizes, so
+        # iterate to a fixed point; the level-set carve needs only two passes
+        if pass_ >= 2 and (not getattr(a, "body_json", None)
+                           or abs(target - prev) < 5e-5):
+            break
+    info["body_target_g"] = target * 1e3
+    info["build_passes"] = pass_
     return geom, info, asm
 
 
@@ -115,7 +160,8 @@ def make_bindings(a, out: Path, asm: dict, seed_geom):
         out_dir=str(out / "records"),
         cfd_kwargs=dict(common, max_iterations=a.cfd_iters, **cfd_extra),
         adjoint_kwargs=dict(common, primal_iters=a.adj_iters, adjoint_iters=a.adj_iters),
-        seed_geometry=seed_geom, ballast_material=a.ballast,
+        seed_geometry=seed_geom,
+        ballast_material=None if a.ballast == "none" else a.ballast,
         hj_max_substeps=a.substeps, hj_trust_radius_m=a.trust_mm / 1000.0,
         hj_aero_smooth_m=a.smooth_mm / 1000.0,
     )
@@ -269,7 +315,8 @@ def main(argv=None):
     ap.add_argument("--support", choices=("cad", "strut"), default="cad")
     ap.add_argument("--body-json", default=None,
                     help="parametric body (Part 1 param_body.BodyParams) as JSON; '{}' = defaults")
-    ap.add_argument("--ballast", default="lead")
+    ap.add_argument("--ballast", default="none",
+                    help="none (team spec 2026-09-27: no ballast; the regulation area stays), lead, tungsten_alloy")
     ap.add_argument("--cfd", action="store_true")
     ap.add_argument("--optimise", type=int, default=0)
     ap.add_argument("--final-cfd", action="store_true")
@@ -305,18 +352,21 @@ def main(argv=None):
     # Measure exactly what the optimiser starts from. Its start is one more
     # remap of the seed, and measuring the pre-remap body put the initial D20
     # 1-2 % away from iteration 1's (2026-09-26). Parts are re-placed on it.
-    geom = b.initialize_phi_fields(a.W, a.x_front, a.d_halo, 0)
+    if not getattr(a, "body_json", None):
+        # (a parametric body is already on the CFD grid and sized to the mass
+        # target; the extra remap would move its mass ~0.4 g off it)
+        geom = b.initialize_phi_fields(a.W, a.x_front, a.d_halo, 0)
     S["body"].update(export_body(geom, out / "body_half.stl"))
-    asm = p4.build(a.W, a.x_front, a.d_halo, str(out / "body_half.stl"), str(out / "parts"),
-                   wheel_design=a.wheels, **p4kw)
-    asm["_dir"] = str(out / "parts")
+    asm = parts_and_joints(a, out, geom, out / "body_half.stl", "parts",
+                           wheel_design=a.wheels, **p4kw)
     S["parts_mass_g"] = asm["parts_mass_g"]
     b = make_bindings(a, out, asm, seed_geom=seed)
     ms = mass_state(b, geom)
     S["mass"] = {k: v for k, v in ms.items() if not k.startswith("_")}
 
     log("3 LEGAL")
-    chk = legality.check(str(out / "body_half.stl"), asm, S["mass"], S["body"]["field_bodies"])
+    chk = legality.check(str(out / "body_half.stl"), asm, S["mass"], S["body"]["field_bodies"],
+                         machined_stl=asm["joints"].get("machined_body_half_stl"))
     S["legality"] = {"checks": chk, "summary": legality.summary(chk)}
     moi = asm["wheel_moi_kg_m2"]
 
@@ -352,12 +402,12 @@ def main(argv=None):
             geom.phi.load(next(iter(res.best.phi_snapshot_paths.values())))
             S["optimisation"]["final_is"] = res.best.candidate_id
         S["body_final"] = export_body(geom, out / "body_final_half.stl")
-        asm = p4.build(a.W, a.x_front, a.d_halo, str(out / "body_final_half.stl"),
-                       str(out / "parts_final"), wheel_design=a.wheels, **p4kw)
-        asm["_dir"] = str(out / "parts_final")
+        asm = parts_and_joints(a, out, geom, out / "body_final_half.stl", "parts_final",
+                               wheel_design=a.wheels, **p4kw)
         ms = mass_state(b, geom)
         S["mass"] = {k: v for k, v in ms.items() if not k.startswith("_")}
-        chk = legality.check(str(out / "body_final_half.stl"), asm, S["mass"],
+        chk = legality.check(str(out / "body_final_half.stl",
+                             machined_stl=asm["joints"].get("machined_body_half_stl")), asm, S["mass"],
                              S["body_final"]["field_bodies"])
         S["legality"] = {"checks": chk, "summary": legality.summary(chk)}
         if a.final_cfd:
