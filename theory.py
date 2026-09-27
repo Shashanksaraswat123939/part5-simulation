@@ -27,10 +27,11 @@ import paths  # noqa: F401
 
 M_TOTAL = 0.0482 + 0.023            # T3.6 target + cartridge, kg
 
-# The measured final car (GitHub Actions, medium mesh, 2026-09-26/27).
-FINAL = dict(D20=0.3881, L=0.254, I=124.9e-9, mu=0.010, h=0.030)   # launch COM; its penalty is a placeholder polynomial centred on 30 mm
-PARTS_N = {"wheelF": 0.1616, "wheelR": 0.0955, "car": 0.0465, "supports": 0.0254,
-           "halo": 0.0177, "fwing": 0.0256, "rwing": 0.0135, "tethers": 0.0024}
+# The measured final car (GitHub Actions, medium mesh, 2026-09-27; two runs
+# 0.3873 / 0.3869 N; medium is within 0.7 % of the fine mesh).
+FINAL = dict(D20=0.3871, L=0.248, I=101.5e-9, mu=0.010, h=0.030)   # launch COM; its penalty is a placeholder polynomial centred on 30 mm
+PARTS_N = {"wheelF": 0.1611, "wheelR": 0.0950, "car": 0.0464, "supports": 0.0249,
+           "halo": 0.0178, "fwing": 0.0261, "rwing": 0.0135, "tethers": 0.0024}
 
 
 def race_time(model, D20, L, I, mu, h, m=M_TOTAL, thrust=1.0):
@@ -49,9 +50,8 @@ def scenarios(final: dict) -> list:
         ("session start: v2 parts (0.419 N, cad wheels 137.7)",
          dict(f, D20=0.419, L=0.21, I=137.7e-9)),
         ("final car, measured", f),
-        ("+ film-covered carbon wheels (I 101.5)", dict(f, I=101.5e-9)),
         ("+ open carbon wheels, same drag (I 85.6)", dict(f, I=85.6e-9)),
-        ("everything but wheels at half its drag", dict(f, I=85.6e-9, D20=wheels + rest / 2)),
+        ("+ everything but wheels at half its drag", dict(f, I=85.6e-9, D20=wheels + rest / 2)),
         ("LIMIT: only the wheels make drag", dict(f, I=85.6e-9, D20=wheels)),
         ("LIMIT: + wheel drag halved (not achievable in the rules)",
          dict(f, I=85.6e-9, D20=wheels / 2)),
