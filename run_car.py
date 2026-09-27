@@ -105,7 +105,8 @@ def build_car(a, out: Path, **p4kw):
     import bayesian_outer_search as bos
     p4kw.setdefault("wheel_design", a.wheels)
     target = None
-    for pass_ in range(1, 5):
+    targets = []
+    for pass_ in range(1, 7):
         prev = target
         a._body_target_kg = target
         geom, info = build_body(a, out)
@@ -116,20 +117,33 @@ def build_car(a, out: Path, **p4kw):
         bos.STUB_WHEEL_REAR_MASS_KG = f["wheels_rear_mass_kg"]
         bos.STUB_HALO_MASS_KG = f["halo_mass_kg"]
         bos.STUB_REAR_WING_MASS_KG = f["rear_wing_mass_kg"]
-        target = body_target_kg(asm)
+        new = body_target_kg(asm)
+        # damped: the keel under a support beam grows as the body grows, so an
+        # undamped fixed point overshoots and oscillates (1.6 g off, 2026-09-27)
+        target = new if prev is None else 0.5 * (prev + new)
+        targets.append(new * 1e3)
+        log(f"  pass {pass_}: body target {new*1e3:.2f} g; joints "
+            + ", ".join(f"{k} {v*1e3:+.2f}" for k, v in asm["joints"]["mass_delta_kg"].items())
+            + f"; supports each {[round(x, 2) for x in asm['info'].get('support_mass_g_each', [])]}")
         # the joints (pocket plugs) depend on the body the target sizes, so
         # iterate to a fixed point; the level-set carve needs only two passes
         if pass_ >= 2 and (not getattr(a, "body_json", None)
-                           or abs(target - prev) < 5e-5):
+                           or abs(new - (prev or new)) < 5e-5):
             break
     info["body_target_g"] = target * 1e3
     info["build_passes"] = pass_
+    info["body_targets_g"] = targets
     return geom, info, asm
 
 
 def part4_kwargs(a) -> dict:
     import support as sp
-    return {"support": sp.Strut() if getattr(a, "support", "cad") == "strut" else None}
+    import beam_support as bsm
+    kind = getattr(a, "support", "cad")
+    sup = {"cad": None, "strut": sp.Strut(), "beam": bsm.BeamSupport()}[kind]
+    if kind == "beam" and getattr(a, "support_json", None):
+        sup = bsm.BeamSupport(**json.loads(a.support_json))
+    return {"support": sup}
 
 
 def export_body(geom, path: Path) -> dict:
@@ -312,7 +326,9 @@ def main(argv=None):
     ap.add_argument("--stage1-iters", type=int, default=100)
     ap.add_argument("--cfd-mm", type=float, default=1.0)
     ap.add_argument("--wheels", default="carbon_rim_film")
-    ap.add_argument("--support", choices=("cad", "strut"), default="cad")
+    ap.add_argument("--support", choices=("cad", "strut", "beam"), default="cad",
+                    help="cad = team v2 supports (reference); beam = the same architecture, parametric")
+    ap.add_argument("--support-json", default=None, help="BeamSupport parameters as JSON")
     ap.add_argument("--body-json", default=None,
                     help="parametric body (Part 1 param_body.BodyParams) as JSON; '{}' = defaults")
     ap.add_argument("--ballast", default="none",
