@@ -44,7 +44,10 @@ def load_results(root: Path) -> list:
 
 
 def _legal(r) -> bool:
-    return r.get("legal", False) and r.get("T_raw_s") is not None
+    # Converged too: round 0's 0.10 "won" with -0.16 N of body drag from a
+    # solve drifting 31 % -- an oscillating flow, not a fast car.
+    return (r.get("legal", False) and r.get("T_raw_s") is not None
+            and r.get("converged", False))
 
 
 def plan(rnd: int, n: int, results: Path | None) -> list:
