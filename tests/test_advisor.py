@@ -72,7 +72,8 @@ def test_whole_chain_without_cfd():
                           "--cfd-mm", "2.0"])
         assert (Path(td) / "report.md").exists() and (Path(td) / "summary.json").exists()
         assert S["legality"]["summary"]["n_checks"] > 40
-        assert S["mass"]["regime"] in ("absorbing", "heavy", "full")
+        assert S["mass"]["regime"] == "none"          # no ballast (team spec 2026-09-27)
+        assert S["mass"]["ballast_g"] == 0.0
         assert len(json.loads((Path(td) / "parts" / "assembly.json").read_text())
                    ["extra_surfaces"]) == 7
 
