@@ -63,8 +63,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { id: final_optimise_medium, args: "--cfd --optimise 3 --final-cfd --res medium" }
-          - { id: final_cfd_medium, args: "--cfd --res medium" }
+          # the car the pattern search starts from: parametric body, beam
+          # supports, team wheels in PA12, PA12 nose, no ballast, machinable
+          - { id: car_param_beam, args: "--cfd --res medium --body-json '{}' --support beam" }
     env:
       OMPI_MCA_hwloc_base_use_hwthreads_as_cpus: "1"
       OMPI_MCA_rmaps_base_oversubscribe: "1"

@@ -212,6 +212,12 @@ def cfd_and_objective(b, stl: Path, mstate: dict, wheel_moi: float, mu: float) -
     _, lx, _, lz = m.launch_com()
     obj = b.evaluate_objective(D20=cfd.D20, L=cfd.L, m_total=m.total_mass_kg,
                                h_com=lz, x_com=lx, mu=mu, wheel_moi=wheel_moi)
+    # The same car at exactly the mass target: what a body change is worth once
+    # re-sized, so fixed-skin screening cars compare fairly (pattern.py).
+    import ballast as _bl
+    m_target = _bl.target_competition_kg() + _bl.CARTRIDGE_KG
+    obj_t = b.evaluate_objective(D20=cfd.D20, L=cfd.L, m_total=m_target,
+                                 h_com=lz, x_com=lx, mu=mu, wheel_moi=wheel_moi)
     parts = {}
     if cfd.patch_forces:
         for k, v in cfd.patch_forces.items():
@@ -219,6 +225,7 @@ def cfd_and_objective(b, stl: Path, mstate: dict, wheel_moi: float, mu: float) -
     return {"D20_N": cfd.D20, "L_N": cfd.L, "converged": cfd.converged,
             "residual": cfd.residual_final, "stderr": cfd.force_mean_stderr,
             "drift": cfd.force_drift, "parts": parts, "T_raw_s": obj.T_raw,
+            "T_at_target_s": obj_t.T_raw,
             "T_pen_s": obj.T_com_penalized, "gradients": obj.gradients,
             "seconds": round(time.time() - t0, 1)}
 

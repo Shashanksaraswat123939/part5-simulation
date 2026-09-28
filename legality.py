@@ -140,6 +140,26 @@ def check(body_half_stl: str, assembly: dict, mass_state: dict | None = None,
         if "capacity_g" in mass_state:
             r["T1.22_ballast_capacity"] = _entry(mass_state["capacity_g"] - mass_state["ballast_g"])
 
+    # T7.13 wheel safety test: a 3-finger claw hooks each wheel's inner corner
+    # with a 1.5 x 1.5 mm lip (regulation figure, p.34). The annulus 1.5 mm
+    # in from the inner face, over the outer 1.5 mm of radius, must be clear of
+    # the body and every other part.
+    from geometry_contract import FRONT_WHEEL_INNER_Y_MM as FY, REAR_WHEEL_INNER_Y_MM as RY
+    wd = assembly.get("wheel_design", {})
+    for tag, x_ax, y_in, key in (("front", xf, FY, "front"), ("rear", xf + W, RY, "rear")):
+        R = wd.get(key, {}).get("R_mm", 14.05)
+        zc = R - 0.3                                      # wheels sit 0.3 mm into the track
+        pts = []
+        for yy in np.linspace(y_in - 1.45, y_in - 0.05, 4):
+            for rr in np.linspace(R - 1.45, R - 0.05, 4):
+                for t in np.linspace(0, 2 * math.pi, 36, endpoint=False):
+                    pts.append((x_ax + rr * math.cos(t), yy, zc + rr * math.sin(t)))
+        pts = np.array(pts) / 1e3
+        pts = pts[pts[:, 2] > 0.0005]                    # above the track
+        hit = sum(int(m.contains(pts).sum()) for m in non_wheel if m.is_watertight)
+        r[f"T7.13_{tag}_claw_clearance"] = _entry(0.0 if hit == 0 else -1.0,
+                                                  f"{hit} of {len(pts)} claw points blocked")
+
     j = assembly.get("joints")
     if j is not None:
         r["manufacture_machined_body_closed"] = _entry(0.0 if j["machined_body_watertight"] else -1.0)
