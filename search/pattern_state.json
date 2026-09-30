@@ -1,6 +1,6 @@
 {
  "round": 4,
- "phase": "screen",
+ "phase": "confirm",
  "best": {
   "nose_len": 8.0,
   "n_b": 10.0,
@@ -321,9 +321,21 @@
    "screen_T0": 1.5730900565603605,
    "noise": 0.0011790461774372485,
    "winners": []
+  },
+  {
+   "round": 4,
+   "screen_T0": 1.578867279294776,
+   "noise": 0.0005,
+   "winners": [
+    [
+     "fw.half_span_mm",
+     -1,
+     -0.002987259629833705
+    ]
+   ]
   }
  ],
- "screen_noise_s": 0.0011790461774372485,
+ "screen_noise_s": 0.0005,
  "groups": [
   "parts"
  ],
