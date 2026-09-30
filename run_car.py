@@ -374,7 +374,6 @@ def main(argv=None):
     out.mkdir(parents=True, exist_ok=True)
     import assembly as p4
     import legality
-    import wheel as wh
     from optimizer_contract import DEFAULT_ROLLING_MU
     mu = DEFAULT_ROLLING_MU
 
@@ -416,9 +415,9 @@ def main(argv=None):
         if not gate.stl_half_path:
             raise SystemExit(f"initial body failed the CFD gate: {gate.failure_reason}")
         S["cfd_initial"] = cfd_and_objective(b, Path(gate.stl_half_path), ms, moi, mu)
-        designs = {n: wh.mean_inertia_kg_m2(n) for n in wh.DESIGNS}
-        designs["_current"] = moi
-        S["whatif"] = what_if(b, ms, S["cfd_initial"], mu, designs)
+        # The wheel is decided (team STL in PA12, 2026-09-28): no what-if over
+        # the hypothetical designs in wheel.DESIGNS.
+        S["whatif"] = what_if(b, ms, S["cfd_initial"], mu, {"_current": moi})
 
     if a.optimise:
         log(f"5 OPTIMISE: {a.optimise} CFD+adjoint iterations")
@@ -445,9 +444,9 @@ def main(argv=None):
                                wheel_design=a.wheels, **p4kw)
         ms = mass_state(b, geom)
         S["mass"] = {k: v for k, v in ms.items() if not k.startswith("_")}
-        chk = legality.check(str(out / "body_final_half.stl",
-                             machined_stl=asm["joints"].get("machined_body_half_stl")), asm, S["mass"],
-                             S["body_final"]["field_bodies"])
+        chk = legality.check(str(out / "body_final_half.stl"), asm, S["mass"],
+                             S["body_final"]["field_bodies"],
+                             machined_stl=asm["joints"].get("machined_body_half_stl"))
         S["legality"] = {"checks": chk, "summary": legality.summary(chk)}
         if a.final_cfd:
             log("6 FINAL CFD")
