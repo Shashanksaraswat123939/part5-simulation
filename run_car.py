@@ -198,8 +198,15 @@ def make_bindings(a, out: Path, asm: dict, seed_geom):
     from pipeline_interface import unified_bindings
     import assembly as p4
     extra = p4.extra_surfaces_from(str(Path(asm["_dir"]) / "assembly.json"))
+    # ONE meshing frame for every car: the legal envelope (T8.2 and T9.4.2
+    # overhangs, T3.4 half width, T3.5 height, 1 mm slack). Sized from each
+    # car's own bounding box, a longer nose or a wider wing moved the domain,
+    # the background cells and the refinement boxes -- remeshing noise that
+    # has nothing to do with the change being measured.
+    ref_a, ref_b = a.x_front - 16.0, a.x_front + a.W + 16.0
+    frame = (((ref_a - 41.0) / 1e3, 0.0, 0.0), ((ref_b + 41.0) / 1e3, 0.0435, 0.066))
     common = {"resolution": a.res, "n_subdomains": a.np, "extra_surfaces": extra,
-              "keep_run_dir": a.keep_runs}
+              "keep_run_dir": a.keep_runs, "domain_reference_bounds": frame}
     cfd_extra = ({"stage_timeout_s": a.stage_timeout_s}
                  if getattr(a, "stage_timeout_s", None) else {})
     cfd_extra.update(json.loads(getattr(a, "cfd_json", None) or "{}"))
