@@ -42,11 +42,11 @@ HERE = Path(__file__).resolve().parent
 STATE = HERE / "search" / "pattern_state.json"
 BATCH = HERE / "search" / "pattern_batch.json"
 MAX_ROUNDS = 6
-# Floor on the noise estimate. Two base runs of the same mesh agree to 0.02 ms,
-# but a re-meshed variant does not: in the round 0 screen six modes "won" in
-# BOTH directions by 0.1-0.5 ms (2026-09-30). 0.25 ms (x2 = 0.5 ms) is above
-# every one of those.
-MIN_NOISE_S = 2.5e-4
+# Floor on the noise estimate. Two base runs can agree to 0.02 ms, but three
+# runs of one identical car in the round 2 confirm spread 1.2 ms (2026-09-30):
+# solver run-to-run variation. A two-run estimate is too optimistic, so the
+# floor is 0.5 ms and a winner must beat the base by more than 1 ms.
+MIN_NOISE_S = 5e-4
 LOFT = ([f"st_b{i}" for i in range(8)] + [f"st_zt{i}" for i in range(8)]
         + [f"st_zb{i}" for i in range(8)]
         + ["p", "s_b", "s_zt", "s_zb", "s_x0", "s_x1", "s_taper", "s_p", "blend_mm"])
@@ -147,6 +147,18 @@ def _results(root: Path, B: dict) -> list:
     return [r for r in rows if r["round"] == B["round"] and r["phase"] == B["phase"]]
 
 
+def average_repeats(rows: list) -> list:
+    """Cars with identical parameters are repeat measurements of one car:
+    return one row each, at their mean time. Taking the best of several
+    identical cars rewards solver noise (round 2 confirm, 2026-09-30)."""
+    groups = {}
+    for r in rows:
+        groups.setdefault(json.dumps(r["params"], sort_keys=True), []).append(r)
+    return [dict(g[0], T_s=float(np.mean([r["T_s"] for r in g])),
+                 tag="+".join(r["tag"] for r in g), n_repeats=len(g))
+            for g in groups.values()]
+
+
 def advance(root: Path) -> str:
     get, put = _get_put()
     pb = _pb()
@@ -200,12 +212,12 @@ def advance(root: Path) -> str:
         return "\n".join(msg)
 
     # confirm
-    good = [r for r in rows if r["ok"]]
+    good = average_repeats([r for r in rows if r["ok"]])
     if not good:
         raise SystemExit("no valid car in the confirm batch")
     cur = [r["T_s"] for r in good if r["tag"] in ("current", "start", "start_repeat")]
     top = min(good, key=lambda r: r["T_s"])
-    noise = state.get("screen_noise_s", MIN_NOISE_S)
+    noise = max(state.get("screen_noise_s", MIN_NOISE_S), MIN_NOISE_S)
     # Compare within this batch: the current car was re-run beside the candidates.
     ref = float(np.mean(cur)) if cur else state["best_T"]
     if state["best_T"] is None:                            # first confirm: just the start car
