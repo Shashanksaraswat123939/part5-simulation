@@ -134,9 +134,12 @@ def check(body_half_stl: str, assembly: dict, mass_state: dict | None = None,
                             f"{100*frac:.1f}% of the 3 mm annulus is solid")
 
     if mass_state is not None:
-        comp = mass_state["competition_mass_g"]
+        # as manufactured when the joints report it: the scale reads the
+        # parts that are made, not the model's rollup
+        comp = mass_state.get("manufactured_mass_g", mass_state["competition_mass_g"])
         r["T3.6_mass"] = _entry(comp - REGS["T3.6_mass_g"],
-                                f"{comp:.2f} g incl. {mass_state.get('ballast_g', 0):.2f} g ballast")
+                                f"{comp:.2f} g incl. {mass_state.get('ballast_g', 0):.2f} g ballast"
+                                + (" (as manufactured)" if "manufactured_mass_g" in mass_state else ""))
         if "capacity_g" in mass_state:
             r["T1.22_ballast_capacity"] = _entry(mass_state["capacity_g"] - mass_state["ballast_g"])
 
@@ -173,7 +176,15 @@ def check(body_half_stl: str, assembly: dict, mass_state: dict | None = None,
 
     j = assembly.get("joints")
     if j is not None:
-        r["manufacture_machined_body_closed"] = _entry(0.0 if j["machined_body_watertight"] else -1.0)
+        # every manufacturing file, RE-READ from disk, must be closed solids
+        # and as many of them as the part has (an in-memory mesh can be closed
+        # while the STL written from it is torn: 5 of 7 files were, 2026-09-30)
+        bad = [k for k, v in j.get("manufactured", {}).items()
+               if "closed" in v and not (v["closed"] and v["pieces"] == v["pieces_expected"])]
+        r["manufacture_files_are_solids"] = _entry(
+            0.0 if j["machined_body_watertight"] and not bad else -1.0,
+            "not a closed solid: " + ", ".join(bad) if bad else
+            f"{len(j.get('manufactured', {}))} files")
     for k, m in assembly.get("gates", {}).items():
         r[f"P4.{k}"] = _entry(m)
     return r
