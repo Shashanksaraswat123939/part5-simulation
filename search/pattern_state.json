@@ -1,6 +1,6 @@
 {
- "round": 5,
- "phase": "confirm",
+ "round": 6,
+ "phase": "screen",
  "best": {
   "nose_len": 8.0,
   "n_b": 10.0,
@@ -90,8 +90,8 @@
    0.0
   ]
  },
- "best_T": 1.5783985948059132,
- "skin_mm": 1.530862039436584,
+ "best_T": 1.5707113544903857,
+ "skin_mm": 1.2412486825512496,
  "scale": 1.0,
  "fails": 0,
  "history": [
@@ -360,6 +360,13 @@
  "parts": {
   "fw": {
    "half_span_mm": 37.5
+  },
+  "sup": {
+   "beam_w_mm": 8.0,
+   "beam_h_mm": 8.0
+  },
+  "nose": {
+   "length_mm": 25.0
   }
  }
 }
