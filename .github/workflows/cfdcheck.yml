@@ -50,8 +50,8 @@ jobs:
         working-directory: part5-simulation
         run: |
           python run_car.py --out ../out/${{ matrix.id }} --np 4 --keep-runs --cfd --support beam \
-            --body-json "$(cat checks/round2_car.json)" --skin-mm $SKIN_MM \
-            --cfd-json '${{ matrix.cfd }}' ${{ matrix.args }} 2>&1 | tee ../out_${{ matrix.id }}.log
+            --body-json "$(cat checks/round2_car.json)" \
+            --nose-json '${{ matrix.nose }}' ${{ matrix.args }} 2>&1 | tee ../out_${{ matrix.id }}.log
       - name: Collect solver logs
         if: always()
         run: |
