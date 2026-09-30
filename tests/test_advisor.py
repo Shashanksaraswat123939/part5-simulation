@@ -78,6 +78,17 @@ def test_whole_chain_without_cfd():
                    ["extra_surfaces"]) == 7
 
 
+def test_pattern_confirm_averages_identical_cars():
+    import pattern
+    p1, p2 = {"modes": [1.0]}, {"modes": [2.0]}
+    rows = pattern.average_repeats([
+        {"params": p1, "T_s": 1.0, "tag": "a"}, {"params": p1, "T_s": 2.0, "tag": "b"},
+        {"params": p2, "T_s": 1.2, "tag": "c"}])
+    by = {r["tag"]: r for r in rows}
+    assert by["a+b"]["T_s"] == 1.5 and by["a+b"]["n_repeats"] == 2
+    assert by["c"]["T_s"] == 1.2 and len(rows) == 2
+
+
 if __name__ == "__main__":
     _mod = sys.modules[__name__]
     _fails = 0
