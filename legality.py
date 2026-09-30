@@ -11,9 +11,7 @@ Margins are in mm (or g for mass). margin >= 0 passes.
 """
 from __future__ import annotations
 
-import json
 import math
-from pathlib import Path
 
 import numpy as np
 
@@ -30,12 +28,6 @@ REGS = {
 
 def _entry(margin: float, note: str = "") -> dict:
     return {"margin": float(margin), "pass": bool(margin >= -1e-6), "note": note}
-
-
-def _mirror(mesh):
-    m = mesh.copy()
-    m.vertices[:, 1] *= -1
-    return m
 
 
 def t55_wall_fraction(body_half, rear_face_mm: float, depth_mm: float = 50.0,

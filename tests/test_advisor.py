@@ -55,27 +55,24 @@ def test_t55_probe_sees_a_missing_wall():
 def test_recommendations_follow_the_numbers():
     import run_car
     legal = {"T3.7_clearance": {"pass": False, "margin": -0.1, "note": ""}}
-    mstate = {"regime": "absorbing", "ballast_g": 4.0, "capacity_g": 15.8}
     cfd = {"D20_N": 0.40, "converged": True, "gradients": {"dT_dD20": 0.45},
            "parts": {"wheelF": {"D_N": 0.14}, "wheelR": {"D_N": 0.14}, "car": {"D_N": 0.07},
                      "fwing": {"D_N": 0.05}}}
-    rec = run_car.recommend(legal, mstate, cfd, {"wheels: carbon_rim": -5.0, "drag -10 %": -12})
-    txt = " ".join(rec)
+    rec = run_car.recommend(legal, cfd)
     assert rec[0].startswith("FIX LEGALITY FIRST") and "T3.7" in rec[0]
-    assert "Wheels carry 70 %" in txt and "carbon_rim" in txt and "Ballast absorbs" in txt
+    assert "Wheels carry 70 %" in " ".join(rec)
 
 
 def test_whole_chain_without_cfd():
     import run_car
     with tempfile.TemporaryDirectory() as td:
-        S = run_car.main(["--out", td, "--stage1-iters", "20", "--stage1-mm", "3.0",
-                          "--cfd-mm", "2.0"])
+        S = run_car.main(["--out", td, "--cfd-mm", "2.0", "--skin-mm", "1.0"])
         assert (Path(td) / "report.md").exists() and (Path(td) / "summary.json").exists()
         assert S["legality"]["summary"]["n_checks"] > 40
-        assert S["mass"]["regime"] == "none"          # no ballast (team spec 2026-09-27)
-        assert S["mass"]["ballast_g"] == 0.0
+        assert S["legality"]["checks"]["manufacture_files_are_solids"]["pass"]
+        assert 40.0 < S["mass"]["manufactured_mass_g"] < 60.0
         assert len(json.loads((Path(td) / "parts" / "assembly.json").read_text())
-                   ["extra_surfaces"]) == 7
+                   ["extra_surfaces"]) == 8                       # + the printed nose
 
 
 def test_pattern_confirm_averages_identical_cars():
@@ -99,7 +96,7 @@ def test_pattern_parts_screen_carries_part_changes_to_the_confirm():
         pattern.HERE, pattern.STATE, pattern.BATCH = (
             here, here / "search" / "s.json", here / "search" / "b.json")
         try:
-            body = pb.BodyParams().to_hybrid().as_dict()
+            body = pb.BodyParams().as_dict()
             pattern.STATE.write_text(json.dumps({"round": 4, "phase": "screen", "best": body,
                                                  "best_T": 1.57, "skin_mm": 1.0, "scale": 1.0,
                                                  "fails": 0, "history": [{"round": 3}]}))

@@ -1,17 +1,18 @@
 """
 run_car.py -- one car through all five parts.
 
-    python run_car.py --out results/ [--cfd] [--optimise N] [--final-cfd]
+    python run_car.py --out results/ [--body-json '{...}'] [--cfd] [--optimise N] [--final-cfd]
 
-  1. BODY      Part 1: Stage-1 carve at (W, x_front, d_halo) with legal ballast,
-               remapped to the CFD spacing; right-half STL.
-  2. PARTS     Part 4: wheels, supports, halo, front + rear wing, tether guides,
-               as CFD patches, with masses and regulation gates.
+  1. BODY      Part 1: the parametric body (param_body), machinable, sized so
+               the car AS MANUFACTURED weighs 48.2 g (no ballast); right-half STL.
+  2. PARTS     Part 4: wheels, supports, halo, nose, front + rear wing, tether
+               guides as CFD patches; pockets and printed parts (joints); the
+               manufacturing files; masses and regulation gates.
   3. LEGAL     Part 5: scrutineer checks on the assembled car.
   4. CFD       Part 2 (via Part 3 bindings): forward solve with every patch,
                drag by part, race time.                               [--cfd]
   5. OPTIMISE  Part 3 inner loop: CFD + adjoint on the whole car, level-set
-               update of the body, ballast absorbing mass changes.  [--optimise]
+               update of the body.                                  [--optimise]
   6. FINAL     re-place the rear wing on the final body, re-check legality,
                optional final CFD, and write report.md + summary.json.
 
@@ -22,7 +23,6 @@ from __future__ import annotations
 import argparse
 import copy
 import json
-import sys
 import time
 from pathlib import Path
 
@@ -37,34 +37,17 @@ def log(msg: str) -> None:
 
 # --------------------------------------------------------------------------- body
 def build_body(a, out: Path):
+    """The parametric body (Part 1 param_body): drawn, made machinable, and
+    sized by a skin offset (or at a fixed skin with --skin-mm)."""
     from coarse import use_spacing
-    if getattr(a, "body_json", None):
-        # Parametric body (Part 1 param_body): drawn, not carved.
-        import param_body as pb
-        use_spacing(a.cfd_mm)
-        bp = pb.BodyParams.from_dict(json.loads(a.body_json))
-        g = pb.build(a.W, a.x_front, a.d_halo, bp,
-                     target_body_kg=getattr(a, "_body_target_kg", None),
-                     skin_offset_mm=getattr(a, "skin_mm", None))
-        return g, {"param_body": bp.as_dict(), "spacing_mm": a.cfd_mm,
-                   "build": getattr(g, "build_report", {})}
-    use_spacing(a.stage1_mm)
-    import bayesian_outer_search as bos
-    import unified_phi as up
-    bos.BALLAST_MATERIAL = None if a.ballast == "none" else a.ballast
-    res, geom = bos._level2_evaluate_unified(
-        a.W, a.x_front, a.d_halo, n_iters=a.stage1_iters,
-        output_dir=str(out / "stage1"), eval_id=0, return_geom=True)
-    if geom is None:
-        raise SystemExit(f"Stage-1 carve failed: {res.lifecycle}")
+    import param_body as pb
     use_spacing(a.cfd_mm)
-    geom = up.remap_geometry(geom)
-    up.enforce_symmetry(geom)
-    import machining
-    rep = machining.make_machinable(geom)          # the team's mill must cut it
-    up.enforce_symmetry(geom)
-    return geom, {"stage1_mass_g": res.mass_kg * 1e3, "stage1_T_proxy": res.race_time,
-                  "spacing_mm": a.cfd_mm, "build": rep}
+    bp = pb.BodyParams.from_dict(json.loads(a.body_json))
+    g = pb.build(a.W, a.x_front, a.d_halo, bp,
+                 target_body_kg=getattr(a, "_body_target_kg", None),
+                 skin_offset_mm=getattr(a, "skin_mm", None))
+    return g, {"param_body": bp.as_dict(), "spacing_mm": a.cfd_mm,
+               "build": getattr(g, "build_report", {})}
 
 
 def parts_and_joints(a, out: Path, geom, body_stl: Path, parts_dir: str, **p4kw) -> dict:
@@ -102,20 +85,12 @@ def manufactured_mass_kg(asm) -> float:
             ) * 1e-3 + asm["fixed_hardware_kwargs"]["halo_mass_kg"]
 
 
-def body_target_kg(asm) -> float:
-    """No ballast: the body carries whatever the T3.6 floor (+0.2 g) needs."""
-    import ballast
-    f = asm["fixed_hardware_kwargs"]
-    return ballast.target_competition_kg() - (f["wheels_front_mass_kg"] + f["wheels_rear_mass_kg"]
-                                              + f["halo_mass_kg"] + f["rear_wing_mass_kg"])
-
-
 def build_car(a, out: Path, **p4kw):
-    """Body and parts, built TWICE: the body's mass target depends on the parts
-    and joints, which depend on the body. Stage 1 (level-set) carves against the
-    real part masses the second time; a parametric body is sized to them."""
-    import bayesian_outer_search as bos
-    p4kw.setdefault("wheel_design", a.wheels)
+    """Body and parts to a fixed point: the body is sized so the car AS
+    MANUFACTURED weighs the target, but the joints (pockets and plugs) and so
+    the parts' masses depend on the body."""
+    import ballast
+    import unified_phi as up
     target = None
     targets = []
     for pass_ in range(1, 7):
@@ -124,19 +99,9 @@ def build_car(a, out: Path, **p4kw):
         geom, info = build_body(a, out)
         info.update(export_body(geom, out / "body_half.stl"))
         asm = parts_and_joints(a, out, geom, out / "body_half.stl", "parts", **p4kw)
-        f = asm["fixed_hardware_kwargs"]
-        bos.STUB_WHEEL_FRONT_MASS_KG = f["wheels_front_mass_kg"]
-        bos.STUB_WHEEL_REAR_MASS_KG = f["wheels_rear_mass_kg"]
-        bos.STUB_HALO_MASS_KG = f["halo_mass_kg"]
-        bos.STUB_REAR_WING_MASS_KG = f["rear_wing_mass_kg"]
-        new = body_target_kg(asm)
-        if getattr(a, "body_json", None):
-            # Size the MANUFACTURED car to the target: ask the body for the
-            # shortfall on top of what it weighs now.
-            import ballast
-            import unified_phi as up
-            new = (sum(c.mass_kg for c in up.compute_mass_com(geom))
-                   + ballast.target_competition_kg() - manufactured_mass_kg(asm))
+        # ask the body for the shortfall on top of what it weighs now
+        new = (sum(c.mass_kg for c in up.compute_mass_com(geom))
+               + ballast.target_competition_kg() - manufactured_mass_kg(asm))
         # damped: the keel under a support beam grows as the body grows, so an
         # undamped fixed point overshoots and oscillates (1.6 g off, 2026-09-27)
         target = new if prev is None else 0.5 * (prev + new)
@@ -146,10 +111,7 @@ def build_car(a, out: Path, **p4kw):
             + f"; supports each {[round(x, 2) for x in asm['info'].get('support_mass_g_each', [])]}")
         if getattr(a, "skin_mm", None) is not None:
             break                                  # fixed skin: nothing to iterate
-        # the joints (pocket plugs) depend on the body the target sizes, so
-        # iterate to a fixed point; the level-set carve needs only two passes
-        if pass_ >= 2 and (not getattr(a, "body_json", None)
-                           or abs(new - (prev or new)) < 5e-5):
+        if pass_ >= 2 and abs(new - prev) < 5e-5:
             break
     info["body_target_g"] = target * 1e3
     info["build_passes"] = pass_
@@ -158,22 +120,18 @@ def build_car(a, out: Path, **p4kw):
 
 
 def part4_kwargs(a) -> dict:
-    import support as sp
     import beam_support as bsm
-    kind = getattr(a, "support", "cad")
-    sup = {"cad": None, "strut": sp.Strut(), "beam": bsm.BeamSupport()}[kind]
+    kind = getattr(a, "support", "beam")
+    sup = {"cad": None, "beam": bsm.BeamSupport()}[kind]
     if kind == "beam" and getattr(a, "support_json", None):
         sup = bsm.BeamSupport(**json.loads(a.support_json))
-    kw = {"support": sup}
-    if getattr(a, "body_json", None):
-        # The parametric body ends at Ref A; the nose cone is a printed SLS
-        # PA12 shell (team spec 2026-09-27) whose root takes the body's section
-        # 1 mm aft of Ref A and sits in a short pocket.
-        import nose as ns
-        nk = dict(blend_after_ref_a_mm=1.0, root_scale=1.0, material="PA12", wall_mm=0.8)
-        if getattr(a, "nose_json", None):
-            nk.update(json.loads(a.nose_json))
-        kw["nose"] = ns.NoseCone(**nk)
+    # The body ends at Ref A; the nose cone is a printed SLS PA12 shell (team
+    # spec 2026-09-27) whose root takes the body's section 1 mm aft of Ref A.
+    import nose as ns
+    nk = dict(blend_after_ref_a_mm=1.0, root_scale=1.0, material="PA12", wall_mm=0.8)
+    if getattr(a, "nose_json", None):
+        nk.update(json.loads(a.nose_json))
+    kw = {"support": sup, "nose": ns.NoseCone(**nk)}
     if getattr(a, "fwing_json", None):
         import wings as wg
         kw["front"] = wg.FrontWing(**json.loads(a.fwing_json))
@@ -217,20 +175,16 @@ def make_bindings(a, out: Path, asm: dict, seed_geom):
         cfd_kwargs=dict(common, max_iterations=a.cfd_iters, **cfd_extra),
         adjoint_kwargs=dict(common, primal_iters=a.adj_iters, adjoint_iters=a.adj_iters),
         seed_geometry=seed_geom,
-        ballast_material=None if a.ballast == "none" else a.ballast,
+        ballast_material=None,               # the team adds no ballast
         hj_max_substeps=a.substeps, hj_trust_radius_m=a.trust_mm / 1000.0,
         hj_aero_smooth_m=a.smooth_mm / 1000.0,
     )
 
 
 def mass_state(b, geom) -> dict:
-    import ballast as bl
     m = b.compute_mass_report(geom)
-    cap = bl.capacity_kg(bl.DEFAULT_MATERIAL) if m.ballast_regime != "none" else 0.0
     return {"total_g": m.total_mass_kg * 1e3, "competition_mass_g": (m.total_mass_kg - 0.023) * 1e3,
-            "ballast_g": m.ballast_kg * 1e3, "capacity_g": cap * 1e3,
-            "regime": m.ballast_regime, "com_x_mm": m.com_x_m * 1e3, "com_z_mm": m.com_z_m * 1e3,
-            "_report": m}
+            "com_x_mm": m.com_x_m * 1e3, "com_z_mm": m.com_z_m * 1e3, "_report": m}
 
 
 def cfd_and_objective(b, stl: Path, mstate: dict, wheel_moi: float, mu: float) -> dict:
@@ -261,26 +215,22 @@ def cfd_and_objective(b, stl: Path, mstate: dict, wheel_moi: float, mu: float) -
             "seconds": round(time.time() - t0, 1)}
 
 
-def what_if(b, mstate, base: dict, mu: float, designs: dict) -> dict:
-    """Race-time deltas from the objective itself, not rules of thumb."""
+def what_if(b, mstate, base: dict, mu: float, moi: float) -> dict:
+    """Race-time deltas from the objective itself, not rules of thumb (ms)."""
     m = mstate["_report"]
     _, lx, _, lz = m.launch_com()
     D, L = base["D20_N"], base["L_N"]
 
-    def T(D=D, moi=None, mass=m.total_mass_kg, mu_=mu):
+    def T(D=D, mass=m.total_mass_kg, mu_=mu):
         return b.evaluate_objective(D20=D, L=L, m_total=mass, h_com=lz, x_com=lx,
                                     mu=mu_, wheel_moi=moi).T_raw
-    ref = T(moi=designs["_current"])
-    out = {"drag -10 %": T(D=0.9 * D, moi=designs["_current"]) - ref,
-           "mass +1 g": T(moi=designs["_current"], mass=m.total_mass_kg + 1e-3) - ref,
-           "mu 0.010 -> 0.020": T(moi=designs["_current"], mu_=0.020) - ref}
-    for name, moi in designs.items():
-        if not name.startswith("_"):
-            out[f"wheels: {name}"] = T(moi=moi) - ref
-    return {k: v * 1e3 for k, v in out.items()}      # ms
+    ref = T()
+    return {k: (v - ref) * 1e3 for k, v in {
+        "drag -10 %": T(D=0.9 * D), "mass +1 g": T(mass=m.total_mass_kg + 1e-3),
+        "mu 0.010 -> 0.020": T(mu_=0.020)}.items()}
 
 
-def recommend(legal: dict, mstate: dict, cfd: dict | None, whatif: dict | None) -> list:
+def recommend(legal: dict, cfd: dict | None) -> list:
     rec = []
     bad = [k for k, v in legal.items() if not v["pass"]]
     if bad:
@@ -301,20 +251,6 @@ def recommend(legal: dict, mstate: dict, cfd: dict | None, whatif: dict | None) 
         if not cfd["converged"]:
             rec.append("The CFD solve did not pass the residual/drift gate: treat its drag as "
                        "indicative and re-run longer before ranking on it.")
-    if mstate["regime"] == "absorbing":
-        rec.append(f"Ballast absorbs {mstate['ballast_g']:.1f} g of {mstate['capacity_g']:.1f} g: "
-                   "body volume is free, so the body shape should follow drag only.")
-    elif mstate["regime"] == "heavy":
-        rec.append("The car is heavier than 48.2 g with no ballast: remove body material "
-                   "(floor channels or a slimmer body) until ballast is needed.")
-    elif mstate["regime"] == "full":
-        rec.append("The ballast capsule is full and the car is still light: add body mass or "
-                   "use a denser ballast (tungsten alloy holds ~25 g).")
-    if whatif:
-        best = min(((v, k) for k, v in whatif.items() if k.startswith("wheels")), default=None)
-        if best and best[0] < -1.0:
-            rec.append(f"Wheels: switching to '{best[1].split(': ')[1]}' is worth "
-                       f"{-best[0]:.1f} ms (objective, current thrust curve).")
     return rec
 
 
@@ -326,8 +262,6 @@ def write_report(out: Path, S: dict) -> None:
     L += ["## Mass", "", "| item | value |", "|---|---|",
           f"| mass as manufactured (T3.6) | {ms.get('manufactured_mass_g', ms['competition_mass_g']):.2f} g |",
           f"| mass by the model's rollup | {ms['competition_mass_g']:.2f} g |",
-          f"| ballast ({S['ballast_material']}) | {ms['ballast_g']:.2f} g of {ms['capacity_g']:.1f} g |",
-          f"| ballast regime | {ms['regime']} |",
           f"| COM x / z | {ms['com_x_mm']:.1f} / {ms['com_z_mm']:.1f} mm |",
           f"| wheel design | {S['wheels']['design']} (mean I {S['wheels']['mean_I_kg_m2']*1e9:.1f} g·mm²) |",
           ""]
@@ -374,21 +308,16 @@ def main(argv=None):
     ap.add_argument("--W", type=float, default=120.3)
     ap.add_argument("--x-front", type=float, default=46.0)
     ap.add_argument("--d-halo", type=float, default=43.72)
-    ap.add_argument("--stage1-mm", type=float, default=2.0)
-    ap.add_argument("--stage1-iters", type=int, default=100)
     ap.add_argument("--cfd-mm", type=float, default=1.0)
-    ap.add_argument("--wheels", default="team_stl")
-    ap.add_argument("--support", choices=("cad", "strut", "beam"), default="cad",
-                    help="cad = team v2 supports (reference); beam = the same architecture, parametric")
+    ap.add_argument("--support", choices=("cad", "beam"), default="beam",
+                    help="beam = the team's architecture, parametric; cad = the v2 CAD supports (reference)")
     ap.add_argument("--support-json", default=None, help="BeamSupport parameters as JSON")
     ap.add_argument("--nose-json", default=None, help="NoseCone parameters as JSON (parametric body)")
     ap.add_argument("--fwing-json", default=None, help="FrontWing parameters as JSON")
     ap.add_argument("--skin-mm", type=float, default=None,
                     help="fixed skin offset: no mass sizing (gradient checks)")
-    ap.add_argument("--body-json", default=None,
-                    help="parametric body (Part 1 param_body.BodyParams) as JSON; '{}' = defaults")
-    ap.add_argument("--ballast", default="none",
-                    help="none (team spec 2026-09-27: no ballast; the regulation area stays), lead, tungsten_alloy")
+    ap.add_argument("--body-json", default="{}",
+                    help="parametric body (Part 1 param_body.BodyParams) as JSON; '{}' = the start car")
     ap.add_argument("--cfd", action="store_true")
     ap.add_argument("--optimise", type=int, default=0)
     ap.add_argument("--final-cfd", action="store_true")
@@ -413,27 +342,14 @@ def main(argv=None):
     mu = DEFAULT_ROLLING_MU
 
     S = {"scalars": {"W": a.W, "x_front": a.x_front, "d_halo": a.d_halo},
-         "ballast_material": a.ballast, "args": vars(a)}
-    log("1-2 BODY + PARTS: Stage-1 carve against the real Part 4 masses")
+         "args": vars(a)}
+    log("1-2 BODY + PARTS: parametric body sized against the manufactured parts")
     p4kw = part4_kwargs(a)
     geom, S["body"], asm = build_car(a, out, **dict(p4kw))
     S["wheels"] = asm["wheel_design"]
     S["parts_mass_g"] = asm["parts_mass_g"]
 
-    seed = copy.deepcopy(geom)
-    b = make_bindings(a, out, asm, seed_geom=seed)
-    # Measure exactly what the optimiser starts from. Its start is one more
-    # remap of the seed, and measuring the pre-remap body put the initial D20
-    # 1-2 % away from iteration 1's (2026-09-26). Parts are re-placed on it.
-    if not getattr(a, "body_json", None):
-        # (a parametric body is already on the CFD grid and sized to the mass
-        # target; the extra remap would move its mass ~0.4 g off it)
-        geom = b.initialize_phi_fields(a.W, a.x_front, a.d_halo, 0)
-    S["body"].update(export_body(geom, out / "body_half.stl"))
-    asm = parts_and_joints(a, out, geom, out / "body_half.stl", "parts",
-                           wheel_design=a.wheels, **p4kw)
-    S["parts_mass_g"] = asm["parts_mass_g"]
-    b = make_bindings(a, out, asm, seed_geom=seed)
+    b = make_bindings(a, out, asm, seed_geom=copy.deepcopy(geom))
     ms = mass_state(b, geom)
     ms["manufactured_mass_g"] = manufactured_mass_kg(asm) * 1e3
     S["mass"] = {k: v for k, v in ms.items() if not k.startswith("_")}
@@ -452,9 +368,7 @@ def main(argv=None):
         if not gate.stl_half_path:
             raise SystemExit(f"initial body failed the CFD gate: {gate.failure_reason}")
         S["cfd_initial"] = cfd_and_objective(b, Path(gate.stl_half_path), ms, moi, mu)
-        # The wheel is decided (team STL in PA12, 2026-09-28): no what-if over
-        # the hypothetical designs in wheel.DESIGNS.
-        S["whatif"] = what_if(b, ms, S["cfd_initial"], mu, {"_current": moi})
+        S["whatif"] = what_if(b, ms, S["cfd_initial"], mu, moi)
 
     if a.optimise:
         log(f"5 OPTIMISE: {a.optimise} CFD+adjoint iterations")
@@ -478,7 +392,7 @@ def main(argv=None):
             S["optimisation"]["final_is"] = res.best.candidate_id
         S["body_final"] = export_body(geom, out / "body_final_half.stl")
         asm = parts_and_joints(a, out, geom, out / "body_final_half.stl", "parts_final",
-                               wheel_design=a.wheels, **p4kw)
+                               **p4kw)
         ms = mass_state(b, geom)
         ms["manufactured_mass_g"] = manufactured_mass_kg(asm) * 1e3
         S["mass"] = {k: v for k, v in ms.items() if not k.startswith("_")}
@@ -491,8 +405,8 @@ def main(argv=None):
             b2 = make_bindings(a, out, asm, seed_geom=None)
             S["cfd_final"] = cfd_and_objective(b2, out / "body_final_half.stl", ms, moi, mu)
 
-    S["recommendations"] = recommend(S["legality"]["checks"], S["mass"],
-                                     S.get("cfd_final") or S.get("cfd_initial"), S.get("whatif"))
+    S["recommendations"] = recommend(S["legality"]["checks"],
+                                     S.get("cfd_final") or S.get("cfd_initial"))
     (out / "summary.json").write_text(json.dumps(S, indent=2, default=str))
     write_report(out, S)
     log(f"done: {S['legality']['summary']}")
