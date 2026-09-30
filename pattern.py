@@ -50,6 +50,24 @@ MIN_NOISE_S = 5e-4
 LOFT = ([f"st_b{i}" for i in range(8)] + [f"st_zt{i}" for i in range(8)]
         + [f"st_zb{i}" for i in range(8)]
         + ["p", "s_b", "s_zt", "s_zb", "s_x0", "s_x1", "s_taper", "s_p", "blend_mm"])
+# The front-wheel program (2026-09-30): the printed parts that shape the flow
+# onto the front wheels, which carry ~44 % of the drag. name: (step, lo, hi).
+# Bounds are the searchable range, not the rules: every candidate is built
+# and audited, and one failing any gate is dropped like any other bad car.
+PARTS = {
+    "fw.aoa_deg": (2.0, -2.0, 14.0), "fw.z_chord_mm": (1.0, 6.5, 14.0),
+    "fw.gap_to_wheel_mm": (1.0, 5.0, 10.0), "fw.half_span_mm": (2.0, 34.0, 42.5),
+    "fw.flap_chord_mm": (1.0, 8.0, 11.0), "fw.flap_aoa_deg": (5.0, 0.0, 45.0),
+    "fw.camber": (0.02, 0.0, 0.08),
+    # one round-beam diameter: a 7 x 8 mm ellipse already has a 3.06 mm end
+    # radius, below the 3.125 mm cutter, so width and height cannot move apart
+    "sup.beam_d_mm": (1.0, 7.0, 12.0),
+    "sup.z_offset_mm": (1.0, -3.0, 3.0), "sup.disc_front": (1.0, 0.0, 1.0),
+    "sup.disc_r_mm": (1.0, 8.0, 12.0),
+    "nose.length_mm": (5.0, 10.0, 40.0), "nose.k": (0.15, 0.3, 1.0),
+    "nose.p": (0.5, 2.0, 4.0), "nose.tip_z_mm": (2.0, 4.0, 20.0),
+}
+PART_FLAGS = {"fw": "--fwing-json", "sup": "--support-json", "nose": "--nose-json"}
 
 
 def _pb():
@@ -58,6 +76,8 @@ def _pb():
 
 
 def step0(name: str) -> float:
+    if name in PARTS:
+        return PARTS[name][0]
     if name.startswith("mode"):
         return 2.0
     if name in ("p", "s_p"):
@@ -71,6 +91,8 @@ def step0(name: str) -> float:
 
 def bounds(name: str) -> tuple:
     pb = _pb()
+    if name in PARTS:
+        return PARTS[name][1:]
     if name.startswith("mode"):
         return (-6.0, 6.0)
     if name.startswith("st_b"):
@@ -84,13 +106,55 @@ def bounds(name: str) -> tuple:
     return pb.BOUNDS[name]
 
 
-def group(round_no: int) -> list:
-    return [f"mode{i}" for i in range(_pb().N_MODES)] if round_no % 2 == 0 else LOFT
+def group_name(state: dict) -> str:
+    groups = state.get("groups", ["modes", "loft"])
+    return groups[(state["round"] - state.get("focus_round", 0)) % len(groups)]
 
 
-def _get_put():
+def group(state: dict) -> list:
+    return {"modes": [f"mode{i}" for i in range(_pb().N_MODES)], "loft": LOFT,
+            "parts": list(PARTS)}[group_name(state)]
+
+
+def _part_default(name: str) -> float:
+    import beam_support as bsm
+    import nose as ns
+    import wings as wg
+    part, key = name.split(".")
+    key = "beam_w_mm" if key == "beam_d_mm" else key
+    return float(getattr({"fw": wg.FrontWing(), "sup": bsm.BeamSupport(),
+                          "nose": ns.NoseCone()}[part], key))
+
+
+def get(d: dict, name: str) -> float:
+    """d = {"params": body dict, "parts": {"fw": {...}, "sup": {...}, "nose": {...}}}."""
+    if name in PARTS:
+        part, key = name.split(".")
+        key = "beam_w_mm" if key == "beam_d_mm" else key
+        return float(d["parts"].get(part, {}).get(key, _part_default(name)))
     import hybrid as hy
-    return hy.get, hy.put
+    return hy.get(_pb().BodyParams.from_dict(d["params"]), name)
+
+
+def put(d: dict, name: str, v: float) -> dict:
+    if name in PARTS:
+        part, key = name.split(".")
+        parts = {k: dict(x) for k, x in d["parts"].items()}
+        keys = ("beam_w_mm", "beam_h_mm") if key == "beam_d_mm" else (key,)
+        for k in keys:
+            parts.setdefault(part, {})[k] = bool(round(v)) if k == "disc_front" else float(v)
+        return {"params": d["params"], "parts": parts}
+    import hybrid as hy
+    bp = hy.put(_pb().BodyParams.from_dict(d["params"]), name, v)
+    return {"params": bp.as_dict(), "parts": d["parts"]}
+
+
+def _best(state: dict) -> dict:
+    return {"params": state["best"], "parts": state.get("parts", {})}
+
+
+def _case(i: int, tag: str, d: dict, sized: bool) -> dict:
+    return {"id": i, "tag": tag, "params": d["params"], "parts": d["parts"], "sized": sized}
 
 
 def _write_batch(state: dict, cases: list, phase: str):
@@ -121,10 +185,13 @@ def evaluate(case_id: int, out: Path) -> dict:
     # T7.13 (its disc blocks the hang-test claw), so it cannot be the base.
     args = ["--out", str(out), "--cfd", "--res", "medium", "--support", "beam",
             "--body-json", json.dumps(c["params"])]
+    for part, flag in PART_FLAGS.items():
+        if c.get("parts", {}).get(part):
+            args += [flag, json.dumps(c["parts"][part])]
     if not c["sized"]:
         args += ["--skin-mm", str(B["skin_mm"])]
     row = {"id": case_id, "tag": c["tag"], "round": B["round"], "phase": B["phase"],
-           "params": c["params"], "sized": c["sized"], "ok": False}
+           "params": c["params"], "parts": c.get("parts", {}), "sized": c["sized"], "ok": False}
     try:
         S = rc.main(args)
         ci = S["cfd_initial"]
@@ -153,15 +220,14 @@ def average_repeats(rows: list) -> list:
     identical cars rewards solver noise (round 2 confirm, 2026-09-30)."""
     groups = {}
     for r in rows:
-        groups.setdefault(json.dumps(r["params"], sort_keys=True), []).append(r)
+        key = json.dumps([r["params"], r.get("parts", {})], sort_keys=True)
+        groups.setdefault(key, []).append(r)
     return [dict(g[0], T_s=float(np.mean([r["T_s"] for r in g])),
                  tag="+".join(r["tag"] for r in g), n_repeats=len(g))
             for g in groups.values()]
 
 
 def advance(root: Path) -> str:
-    get, put = _get_put()
-    pb = _pb()
     state = json.loads(STATE.read_text())
     B = json.loads(BATCH.read_text())
     rows = _results(root, B)
@@ -173,9 +239,9 @@ def advance(root: Path) -> str:
             raise SystemExit("no valid base car in the screen batch")
         T0 = float(np.mean(bases))
         noise = max(abs(bases[0] - bases[-1]), MIN_NOISE_S)
-        best = pb.BodyParams.from_dict(state["best"])
+        best = _best(state)
         wins = []
-        for n in group(state["round"]):
+        for n in group(state):
             opts = [(by[f"{n}{s}"]["T_s"], d) for s, d in (("+", 1), ("-", -1))
                     if f"{n}{s}" in by and by[f"{n}{s}"]["ok"]]
             if opts:
@@ -193,16 +259,14 @@ def advance(root: Path) -> str:
                 lo, hi = bounds(n)
                 v = get(p, n) + d * frac * state["scale"] * step0(n)
                 p = put(p, n, float(np.clip(v, lo, hi)))
-            return p.as_dict()
+            return p
 
-        cases = [{"id": 0, "tag": "current", "params": best.as_dict(), "sized": True}]
+        cases = [_case(0, "current", best, True)]
         if wins:
-            cases += [{"id": 1, "tag": "all_winners", "params": moved(wins), "sized": True},
-                      {"id": 2, "tag": "top_half", "params": moved(wins[:max(1, len(wins) // 2)]),
-                       "sized": True},
-                      {"id": 3, "tag": "top4", "params": moved(wins[:4]), "sized": True},
-                      {"id": 4, "tag": "top4_half_step", "params": moved(wins[:4], 0.5),
-                       "sized": True}]
+            cases += [_case(1, "all_winners", moved(wins), True),
+                      _case(2, "top_half", moved(wins[:max(1, len(wins) // 2)]), True),
+                      _case(3, "top4", moved(wins[:4]), True),
+                      _case(4, "top4_half_step", moved(wins[:4], 0.5), True)]
         state["phase"] = "confirm"
         state["screen_noise_s"] = noise
         state["history"].append({"round": state["round"], "screen_T0": T0, "noise": noise,
@@ -226,6 +290,7 @@ def advance(root: Path) -> str:
         msg.append(f"start car: {ref:.5f} s at 48.2 g, skin {state['skin_mm']:.2f} mm")
     elif top["T_s"] < ref - 2 * noise and top["tag"] not in ("current",):
         state["best"], state["best_T"] = top["params"], top["T_s"]
+        state["parts"] = top.get("parts", {})
         state["skin_mm"] = top["skin_mm"]
         state["fails"] = 0
         msg.append(f"accepted {top['tag']}: {top['T_s']:.5f} s ({(top['T_s'] - ref) * 1e3:+.2f} ms)")
@@ -235,28 +300,44 @@ def advance(root: Path) -> str:
         msg.append(f"no gain (best {top['tag']} {top['T_s']:.5f} vs {ref:.5f}); step now "
                    f"x{state['scale']}")
     state["round"] += 1 if state["history"] else 0
-    stop = state["fails"] >= 2 or state["round"] >= MAX_ROUNDS
+    stop = (state["fails"] >= 2
+            or state["round"] - state.get("focus_round", 0) >= MAX_ROUNDS)
     STATE.write_text(json.dumps(state, indent=1, default=float))
     if stop:
         msg.append(f"STOP: best {state['best_T']:.5f} s")
         return "\n".join(msg)
-    # next screen
-    best = pb.BodyParams.from_dict(state["best"])
-    cases = [{"id": 0, "tag": "base", "params": best.as_dict(), "sized": False},
-             {"id": 1, "tag": "base_repeat", "params": best.as_dict(), "sized": False}]
-    for n in group(state["round"]):
+    msg.append(plan_screen(state))
+    return "\n".join(msg)
+
+
+def plan_screen(state: dict) -> str:
+    """The current car twice, and every parameter of this round's group at
+    +/- one step."""
+    best = _best(state)
+    cases = [_case(0, "base", best, False), _case(1, "base_repeat", best, False)]
+    for n in group(state):
         lo, hi = bounds(n)
         for s, d in (("+", 1), ("-", -1)):
             v = float(np.clip(get(best, n) + d * state["scale"] * step0(n), lo, hi))
             if v != get(best, n):
-                cases.append({"id": len(cases), "tag": f"{n}{s}", "params": put(best, n, v).as_dict(),
-                              "sized": False})
+                cases.append(_case(len(cases), f"{n}{s}", put(best, n, v), False))
     state["phase"] = "screen"
     STATE.write_text(json.dumps(state, indent=1, default=float))
     _write_batch(state, cases, "screen")
-    msg.append(f"next: screen r{state['round']} ({len(cases)} cars, group "
-               f"{'modes' if state['round'] % 2 == 0 else 'loft'}, step x{state['scale']})")
-    return "\n".join(msg)
+    return (f"next: screen r{state['round']} ({len(cases)} cars, group {group_name(state)}, "
+            f"step x{state['scale']})")
+
+
+def focus(groups: list) -> str:
+    """Point the search at other parameter groups (["parts"] for the
+    front-wheel program): full step, fresh fail count, the round budget
+    restarts, and a screen is planned around the current car. Any pending
+    confirm must be advanced first."""
+    state = json.loads(STATE.read_text())
+    if json.loads(BATCH.read_text())["phase"] == "confirm" and state.get("history"):
+        raise SystemExit("a confirm batch is pending: advance it first")
+    state.update(groups=groups, scale=1.0, fails=0, focus_round=state["round"])
+    return plan_screen(state)
 
 
 def main(argv=None):
@@ -268,6 +349,8 @@ def main(argv=None):
     e.add_argument("--out", required=True)
     a_ = sp.add_parser("advance")
     a_.add_argument("root")
+    f_ = sp.add_parser("focus")
+    f_.add_argument("groups", nargs="+", choices=("modes", "loft", "parts"))
     sp.add_parser("status")
     a = ap.parse_args(argv)
     if a.cmd == "init":
@@ -277,6 +360,8 @@ def main(argv=None):
         print(json.dumps(evaluate(a.id, Path(a.out)), default=str)[:1500])
     elif a.cmd == "advance":
         print(advance(Path(a.root)))
+    elif a.cmd == "focus":
+        print(focus(a.groups))
     else:
         s = json.loads(STATE.read_text())
         print(json.dumps({k: v for k, v in s.items() if k not in ("best", "history")}, default=str))

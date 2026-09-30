@@ -89,6 +89,44 @@ def test_pattern_confirm_averages_identical_cars():
     assert by["c"]["T_s"] == 1.2 and len(rows) == 2
 
 
+def test_pattern_parts_screen_carries_part_changes_to_the_confirm():
+    import pattern
+    import param_body as pb
+    with tempfile.TemporaryDirectory() as td:
+        here = Path(td)
+        (here / "search").mkdir()
+        old = pattern.HERE, pattern.STATE, pattern.BATCH
+        pattern.HERE, pattern.STATE, pattern.BATCH = (
+            here, here / "search" / "s.json", here / "search" / "b.json")
+        try:
+            body = pb.BodyParams().to_hybrid().as_dict()
+            pattern.STATE.write_text(json.dumps({"round": 4, "phase": "screen", "best": body,
+                                                 "best_T": 1.57, "skin_mm": 1.0, "scale": 1.0,
+                                                 "fails": 0, "history": [{"round": 3}]}))
+            pattern.BATCH.write_text(json.dumps({"round": 3, "phase": "screen", "cases": []}))
+            pattern.focus(["parts"])
+            B = json.loads(pattern.BATCH.read_text())
+            tags = {c["tag"]: c for c in B["cases"]}
+            assert B["phase"] == "screen" and "fw.aoa_deg+" in tags and "nose.length_mm-" in tags
+            assert "sup.beam_d_mm-" not in tags                  # 7 mm is the lower bound
+            assert tags["sup.beam_d_mm+"]["parts"]["sup"] == {"beam_w_mm": 8.0, "beam_h_mm": 8.0}
+            assert tags["sup.disc_front+"]["parts"]["sup"]["disc_front"] is True
+            assert tags["fw.aoa_deg+"]["parts"]["fw"]["aoa_deg"] == 8.0
+            rows = [{"round": 4, "phase": "screen", "tag": c["tag"], "ok": True,
+                     "params": c["params"], "parts": c["parts"],
+                     "T_s": 1.570 - (0.005 if c["tag"] == "fw.aoa_deg+" else 0.0)}
+                    for c in B["cases"]]
+            (here / "res").mkdir()
+            for i, r in enumerate(rows):
+                (here / "res" / f"pattern_{i}.json").write_text(json.dumps(r))
+            pattern.advance(here / "res")
+            C = json.loads(pattern.BATCH.read_text())
+            win = next(c for c in C["cases"] if c["tag"] == "all_winners")
+            assert C["phase"] == "confirm" and win["parts"]["fw"]["aoa_deg"] == 8.0
+        finally:
+            pattern.HERE, pattern.STATE, pattern.BATCH = old
+
+
 if __name__ == "__main__":
     _mod = sys.modules[__name__]
     _fails = 0
