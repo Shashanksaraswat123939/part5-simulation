@@ -91,6 +91,17 @@ def parts_and_joints(a, out: Path, geom, body_stl: Path, parts_dir: str, **p4kw)
     return asm
 
 
+def manufactured_mass_kg(asm) -> float:
+    """The car as it is made, without the cartridge: every machined and printed
+    file's own volume x its material (Part 4 joints), the wheels with their
+    bearings, and the halo. This, not the model's rollup, is what the
+    scrutineer's scale reads: on 2026-09-30 a car the rollup put at 48.21 g
+    was 47.84 g as manufactured -- under the 48.0 g floor."""
+    wd = asm["wheel_design"]
+    return (asm["joints"]["manufactured_g"] + 2 * wd["front"]["mass_g"] + 2 * wd["rear"]["mass_g"]
+            ) * 1e-3 + asm["fixed_hardware_kwargs"]["halo_mass_kg"]
+
+
 def body_target_kg(asm) -> float:
     """No ballast: the body carries whatever the T3.6 floor (+0.2 g) needs."""
     import ballast
@@ -119,6 +130,13 @@ def build_car(a, out: Path, **p4kw):
         bos.STUB_HALO_MASS_KG = f["halo_mass_kg"]
         bos.STUB_REAR_WING_MASS_KG = f["rear_wing_mass_kg"]
         new = body_target_kg(asm)
+        if getattr(a, "body_json", None):
+            # Size the MANUFACTURED car to the target: ask the body for the
+            # shortfall on top of what it weighs now.
+            import ballast
+            import unified_phi as up
+            new = (sum(c.mass_kg for c in up.compute_mass_com(geom))
+                   + ballast.target_competition_kg() - manufactured_mass_kg(asm))
         # damped: the keel under a support beam grows as the body grows, so an
         # undamped fixed point overshoots and oscillates (1.6 g off, 2026-09-27)
         target = new if prev is None else 0.5 * (prev + new)
@@ -209,16 +227,17 @@ def mass_state(b, geom) -> dict:
 
 
 def cfd_and_objective(b, stl: Path, mstate: dict, wheel_moi: float, mu: float) -> dict:
-    from optimizer_contract import DEFAULT_ROLLING_MU  # noqa: F401
+    import ballast as _bl
     t0 = time.time()
     cfd = b.run_cfd(str(stl))
     m = mstate["_report"]
     _, lx, _, lz = m.launch_com()
-    obj = b.evaluate_objective(D20=cfd.D20, L=cfd.L, m_total=m.total_mass_kg,
+    m_car = (mstate["manufactured_mass_g"] * 1e-3 + _bl.CARTRIDGE_KG
+             if "manufactured_mass_g" in mstate else m.total_mass_kg)
+    obj = b.evaluate_objective(D20=cfd.D20, L=cfd.L, m_total=m_car,
                                h_com=lz, x_com=lx, mu=mu, wheel_moi=wheel_moi)
     # The same car at exactly the mass target: what a body change is worth once
     # re-sized, so fixed-skin screening cars compare fairly (pattern.py).
-    import ballast as _bl
     m_target = _bl.target_competition_kg() + _bl.CARTRIDGE_KG
     obj_t = b.evaluate_objective(D20=cfd.D20, L=cfd.L, m_total=m_target,
                                  h_com=lz, x_com=lx, mu=mu, wheel_moi=wheel_moi)
@@ -297,7 +316,8 @@ def write_report(out: Path, S: dict) -> None:
          f"d_halo {S['scalars']['d_halo']} mm", ""]
     ms = S["mass"]
     L += ["## Mass", "", "| item | value |", "|---|---|",
-          f"| competition mass (T3.6) | {ms['competition_mass_g']:.2f} g |",
+          f"| mass as manufactured (T3.6) | {ms.get('manufactured_mass_g', ms['competition_mass_g']):.2f} g |",
+          f"| mass by the model's rollup | {ms['competition_mass_g']:.2f} g |",
           f"| ballast ({S['ballast_material']}) | {ms['ballast_g']:.2f} g of {ms['capacity_g']:.1f} g |",
           f"| ballast regime | {ms['regime']} |",
           f"| COM x / z | {ms['com_x_mm']:.1f} / {ms['com_z_mm']:.1f} mm |",
@@ -407,7 +427,9 @@ def main(argv=None):
     S["parts_mass_g"] = asm["parts_mass_g"]
     b = make_bindings(a, out, asm, seed_geom=seed)
     ms = mass_state(b, geom)
+    ms["manufactured_mass_g"] = manufactured_mass_kg(asm) * 1e3
     S["mass"] = {k: v for k, v in ms.items() if not k.startswith("_")}
+    S["manufactured"] = asm["joints"]["manufactured"]
 
     log("3 LEGAL")
     chk = legality.check(str(out / "body_half.stl"), asm, S["mass"], S["body"]["field_bodies"],
@@ -450,6 +472,7 @@ def main(argv=None):
         asm = parts_and_joints(a, out, geom, out / "body_final_half.stl", "parts_final",
                                wheel_design=a.wheels, **p4kw)
         ms = mass_state(b, geom)
+        ms["manufactured_mass_g"] = manufactured_mass_kg(asm) * 1e3
         S["mass"] = {k: v for k, v in ms.items() if not k.startswith("_")}
         chk = legality.check(str(out / "body_final_half.stl"), asm, S["mass"],
                              S["body_final"]["field_bodies"],

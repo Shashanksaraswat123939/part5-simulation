@@ -195,10 +195,13 @@ def evaluate(case_id: int, out: Path) -> dict:
     try:
         S = rc.main(args)
         ci = S["cfd_initial"]
+        # screening cars are not re-sized, and a torn export file does not
+        # change the flow: both only gate the sized cars a confirm can accept
         failed = [k for k in S["legality"]["summary"]["failed"]
-                  if not (k == "T3.6_mass" and not c["sized"])]   # screening cars are not re-sized
+                  if c["sized"] or k not in ("T3.6_mass", "manufacture_files_are_solids")]
         row.update(T_s=ci["T_at_target_s"], T_raw_s=ci["T_raw_s"], D20_N=ci["D20_N"],
-                   converged=ci["converged"], mass_g=S["mass"]["competition_mass_g"],
+                   converged=ci["converged"],
+                   mass_g=S["mass"].get("manufactured_mass_g", S["mass"]["competition_mass_g"]),
                    skin_mm=S["body"].get("build", {}).get("skin_offset_mm"),
                    failed=failed, ok=bool(ci["converged"] and not failed))
     except (Exception, SystemExit) as exc:  # noqa: BLE001 -- a failed car is a result
