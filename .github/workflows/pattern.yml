@@ -1,15 +1,20 @@
 name: pattern
 
-# One batch of the pattern search (pattern.py): every car in
-# search/pattern_batch.json, medium-mesh CFD, in parallel (GitHub runs ~20 at
-# a time). Push a new batch to a pattern/** branch to run it.
+# One batch of the pattern search (pattern.py) on SimScale: every car in
+# search/pattern_batch.json. The runners only build geometry and call the
+# SimScale API; meshing and solving happen on SimScale. Push a batch to a
+# simscale-pattern/** branch to run it.
+#
+# Needs repository secrets SIMSCALE_API_KEY and SIMSCALE_PROJECT_ID, and
+# optionally the variable SIMSCALE_MAX_PARALLEL (runs SimScale may take at once).
 on:
   workflow_dispatch:
   push:
-    branches: ["pattern/**"]
+    branches: ["simscale-pattern/**"]
 
 env:
-  PY_DEPS: pytest numpy scipy pandas trimesh scikit-image shapely rtree mapbox-earcut manifold3d fast_simplification jax jaxlib matplotlib
+  PY_DEPS: pytest numpy scipy pandas trimesh scikit-image shapely rtree mapbox-earcut manifold3d fast_simplification jax jaxlib matplotlib requests
+  SDK: git+https://github.com/SimScaleGmbH/simscale-python-sdk.git@19.1.0
 
 jobs:
   setup:
@@ -24,32 +29,29 @@ jobs:
   car:
     needs: setup
     runs-on: ubuntu-24.04
-    timeout-minutes: 240
+    timeout-minutes: 360
     strategy:
       fail-fast: false
+      max-parallel: ${{ fromJSON(vars.SIMSCALE_MAX_PARALLEL || '4') }}
       matrix:
         id: ${{ fromJSON(needs.setup.outputs.ids) }}
     env:
-      OMPI_MCA_hwloc_base_use_hwthreads_as_cpus: "1"
-      OMPI_MCA_rmaps_base_oversubscribe: "1"
+      SIMSCALE_API_KEY: ${{ secrets.SIMSCALE_API_KEY }}
+      SIMSCALE_PROJECT_ID: ${{ secrets.SIMSCALE_PROJECT_ID }}
     steps:
       - uses: actions/checkout@v4
         with: { path: part5-simulation }
       - uses: actions/checkout@v4
-        with: { repository: Shashanksaraswat123939/part4-simulation, path: part4-simulation }
+        with: { repository: Shashanksaraswat123939/part4-simulation, ref: simscale, path: part4-simulation }
       - uses: actions/checkout@v4
-        with: { repository: Shashanksaraswat123939/part1-simulation, path: part1-simulation }
+        with: { repository: Shashanksaraswat123939/part1-simulation, ref: simscale, path: part1-simulation }
       - uses: actions/checkout@v4
-        with: { repository: Shashanksaraswat123939/part2-simulation, path: part2-simulation }
+        with: { repository: Shashanksaraswat123939/part2-simulation, ref: simscale, path: part2-simulation }
       - uses: actions/checkout@v4
-        with: { repository: Shashanksaraswat123939/part3-simulation, path: part3-simulation }
+        with: { repository: Shashanksaraswat123939/part3-simulation, ref: simscale, path: part3-simulation }
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
-      - run: pip install $PY_DEPS
-      - name: Install ESI OpenFOAM v2412
-        run: |
-          curl -s https://dl.openfoam.com/add-debian-repo.sh | sudo bash
-          sudo apt-get install -y openfoam2412-default
+      - run: pip install $PY_DEPS "$SDK"
       - name: Car ${{ matrix.id }}
         working-directory: part5-simulation
         run: python pattern.py eval --id ${{ matrix.id }} --out ../out/c${{ matrix.id }}
@@ -60,5 +62,4 @@ jobs:
           path: |
             out/c${{ matrix.id }}/pattern_*.json
             out/c${{ matrix.id }}/summary.json
-            out/c${{ matrix.id }}/body_half.stl
-            out/c${{ matrix.id }}/manufacture/*.stl
+            out/c${{ matrix.id }}/simscale/simscale.json

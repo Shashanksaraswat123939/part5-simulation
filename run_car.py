@@ -1,7 +1,7 @@
 """
 run_car.py -- one car through all five parts.
 
-    python run_car.py --out results/ [--body-json '{...}'] [--cfd] [--optimise N] [--final-cfd]
+    python run_car.py --out results/ [--body-json '{...}'] [--cfd]      (simscale branch)
 
   1. BODY      Part 1: the parametric body (param_body), machinable, sized so
                the car AS MANUFACTURED weighs 48.2 g (no ballast); right-half STL.
@@ -9,12 +9,10 @@ run_car.py -- one car through all five parts.
                guides as CFD patches; pockets and printed parts (joints); the
                manufacturing files; masses and regulation gates.
   3. LEGAL     Part 5: scrutineer checks on the assembled car.
-  4. CFD       Part 2 (via Part 3 bindings): forward solve with every patch,
-               drag by part, race time.                               [--cfd]
-  5. OPTIMISE  Part 3 inner loop: CFD + adjoint on the whole car, level-set
-               update of the body.                                  [--optimise]
-  6. FINAL     re-place the rear wing on the final body, re-check legality,
-               optional final CFD, and write report.md + summary.json.
+  4. CFD       Part 2 on SimScale (via Part 3 bindings): the flow domain is
+               built here and meshed and solved on SimScale, drag by part,
+               race time. Needs SIMSCALE_API_KEY and SIMSCALE_PROJECT_ID. [--cfd]
+  5. REPORT    report.md + summary.json.
 
 Every stage writes its artefacts to --out; the run never hides a failure.
 """
@@ -163,21 +161,16 @@ def make_bindings(a, out: Path, asm: dict, seed_geom):
     # has nothing to do with the change being measured.
     ref_a, ref_b = a.x_front - 16.0, a.x_front + a.W + 16.0
     frame = (((ref_a - 41.0) / 1e3, 0.0, 0.0), ((ref_b + 41.0) / 1e3, 0.0435, 0.066))
-    common = {"resolution": a.res, "n_subdomains": a.np, "extra_surfaces": extra,
-              "keep_run_dir": a.keep_runs, "domain_reference_bounds": frame}
-    cfd_extra = ({"stage_timeout_s": a.stage_timeout_s}
-                 if getattr(a, "stage_timeout_s", None) else {})
-    cfd_extra.update(json.loads(getattr(a, "cfd_json", None) or "{}"))
+    cfd = {"resolution": a.res, "extra_surfaces": extra, "domain_reference_bounds": frame,
+           "max_iterations": a.cfd_iters, "run_dir": str(out / "simscale")}
+    cfd.update(json.loads(getattr(a, "cfd_json", None) or "{}"))
     return unified_bindings(
         thrust_csv_path=str(PARTS["part2-simulation"] / "co2_thrust_data.csv"),
         fixed_hardware_kwargs=asm["fixed_hardware_kwargs"],
         out_dir=str(out / "records"),
-        cfd_kwargs=dict(common, max_iterations=a.cfd_iters, **cfd_extra),
-        adjoint_kwargs=dict(common, primal_iters=a.adj_iters, adjoint_iters=a.adj_iters),
+        cfd_kwargs=cfd,
         seed_geometry=seed_geom,
         ballast_material=None,               # the team adds no ballast
-        hj_max_substeps=a.substeps, hj_trust_radius_m=a.trust_mm / 1000.0,
-        hj_aero_smooth_m=a.smooth_mm / 1000.0,
     )
 
 
@@ -319,20 +312,10 @@ def main(argv=None):
     ap.add_argument("--body-json", default="{}",
                     help="parametric body (Part 1 param_body.BodyParams) as JSON; '{}' = the start car")
     ap.add_argument("--cfd", action="store_true")
-    ap.add_argument("--optimise", type=int, default=0)
-    ap.add_argument("--final-cfd", action="store_true")
-    ap.add_argument("--res", default="coarse")
-    ap.add_argument("--np", type=int, default=4)
+    ap.add_argument("--res", default="medium", help="SimScale mesh preset: coarse, medium, fine, resolved")
     ap.add_argument("--cfd-iters", type=int, default=2000)
-    ap.add_argument("--adj-iters", type=int, default=1000)
-    ap.add_argument("--substeps", type=int, default=6)
-    ap.add_argument("--trust-mm", type=float, default=1.0)
-    ap.add_argument("--smooth-mm", type=float, default=0.0)
-    ap.add_argument("--keep-runs", action="store_true")
-    ap.add_argument("--stage-timeout-s", type=int, default=None,
-                    help="per OpenFOAM stage; fine meshes need more than the 7200 s default")
     ap.add_argument("--cfd-json", default=None,
-                    help='extra Part 2 run_half_car_cfd options, e.g. \'{"turbulence_model": "kOmegaSSTLM"}\'')
+                    help='extra SimScaleConfig options, e.g. \'{"first_layer_m": 1e-5, "n_layers": 14}\'')
     a = ap.parse_args(argv)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -369,41 +352,6 @@ def main(argv=None):
             raise SystemExit(f"initial body failed the CFD gate: {gate.failure_reason}")
         S["cfd_initial"] = cfd_and_objective(b, Path(gate.stl_half_path), ms, moi, mu)
         S["whatif"] = what_if(b, ms, S["cfd_initial"], mu, moi)
-
-    if a.optimise:
-        log(f"5 OPTIMISE: {a.optimise} CFD+adjoint iterations")
-        from inner_loop import run_inner_loop
-        from optimizer_contract import GradientWeights, OptimizerConfig
-        cfg = OptimizerConfig(rtc_validated_against_track_data=False,
-                              cfd_pipeline_validated_on_known_geometry=False,
-                              mu=mu, wheel_moi_kg_m2=moi, iteration_budget=a.optimise,
-                              evolution_interval_iters=a.optimise)
-        start = copy.deepcopy(geom)
-        res = run_inner_loop(b, cfg, "car", a.W, a.x_front, a.d_halo, start,
-                             str(out / "records"), GradientWeights(1.0, 1.0, 0.0, 0.0))
-        S["optimisation"] = {"iterations": res.iterations_run, "stop_reason": res.stop_reason,
-                             "history": [h.__dict__ for h in res.history]}
-        # The BEST measured iterate, not the loop's last state: that one is the
-        # geometry after the final update, which no CFD ever saw. On 2026-09-26
-        # every aero-only step raised D20, so "last" was reliably the worst.
-        geom = res.final_phi_grids
-        if res.best is not None and res.best.phi_snapshot_paths:
-            geom.phi.load(next(iter(res.best.phi_snapshot_paths.values())))
-            S["optimisation"]["final_is"] = res.best.candidate_id
-        S["body_final"] = export_body(geom, out / "body_final_half.stl")
-        asm = parts_and_joints(a, out, geom, out / "body_final_half.stl", "parts_final",
-                               **p4kw)
-        ms = mass_state(b, geom)
-        ms["manufactured_mass_g"] = manufactured_mass_kg(asm) * 1e3
-        S["mass"] = {k: v for k, v in ms.items() if not k.startswith("_")}
-        chk = legality.check(str(out / "body_final_half.stl"), asm, S["mass"],
-                             S["body_final"]["field_bodies"],
-                             machined_stl=asm["joints"].get("machined_body_half_stl"))
-        S["legality"] = {"checks": chk, "summary": legality.summary(chk)}
-        if a.final_cfd:
-            log("6 FINAL CFD")
-            b2 = make_bindings(a, out, asm, seed_geom=None)
-            S["cfd_final"] = cfd_and_objective(b2, out / "body_final_half.stl", ms, moi, mu)
 
     S["recommendations"] = recommend(S["legality"]["checks"],
                                      S.get("cfd_final") or S.get("cfd_initial"))
