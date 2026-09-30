@@ -1,6 +1,6 @@
 {
- "round": 3,
- "phase": "confirm",
+ "round": 4,
+ "phase": "screen",
  "best": {
   "nose_len": 8.0,
   "n_b": 10.0,
@@ -323,5 +323,9 @@
    "winners": []
   }
  ],
- "screen_noise_s": 0.0011790461774372485
+ "screen_noise_s": 0.0011790461774372485,
+ "groups": [
+  "parts"
+ ],
+ "focus_round": 4
 }
