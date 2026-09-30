@@ -42,7 +42,11 @@ HERE = Path(__file__).resolve().parent
 STATE = HERE / "search" / "pattern_state.json"
 BATCH = HERE / "search" / "pattern_batch.json"
 MAX_ROUNDS = 6
-MIN_NOISE_S = 5e-5           # 0.05 ms floor on the noise estimate
+# Floor on the noise estimate. Two base runs of the same mesh agree to 0.02 ms,
+# but a re-meshed variant does not: in the round 0 screen six modes "won" in
+# BOTH directions by 0.1-0.5 ms (2026-09-30). 0.25 ms (x2 = 0.5 ms) is above
+# every one of those.
+MIN_NOISE_S = 2.5e-4
 LOFT = ([f"st_b{i}" for i in range(8)] + [f"st_zt{i}" for i in range(8)]
         + [f"st_zb{i}" for i in range(8)]
         + ["p", "s_b", "s_zt", "s_zb", "s_x0", "s_x1", "s_taper", "s_p", "blend_mm"])
