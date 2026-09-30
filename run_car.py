@@ -181,6 +181,7 @@ def make_bindings(a, out: Path, asm: dict, seed_geom):
               "keep_run_dir": a.keep_runs}
     cfd_extra = ({"stage_timeout_s": a.stage_timeout_s}
                  if getattr(a, "stage_timeout_s", None) else {})
+    cfd_extra.update(json.loads(getattr(a, "cfd_json", None) or "{}"))
     return unified_bindings(
         thrust_csv_path=str(PARTS["part2-simulation"] / "co2_thrust_data.csv"),
         fixed_hardware_kwargs=asm["fixed_hardware_kwargs"],
@@ -369,6 +370,8 @@ def main(argv=None):
     ap.add_argument("--keep-runs", action="store_true")
     ap.add_argument("--stage-timeout-s", type=int, default=None,
                     help="per OpenFOAM stage; fine meshes need more than the 7200 s default")
+    ap.add_argument("--cfd-json", default=None,
+                    help='extra Part 2 run_half_car_cfd options, e.g. \'{"turbulence_model": "kOmegaSSTLM"}\'')
     a = ap.parse_args(argv)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
