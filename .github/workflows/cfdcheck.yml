@@ -11,7 +11,7 @@ on:
 
 env:
   PY_DEPS: pytest numpy scipy pandas trimesh scikit-image shapely rtree mapbox-earcut manifold3d fast_simplification jax jaxlib matplotlib
-  SKIN_MM: "1.0503202862661634"
+  SKIN_MM: "1.117295093608557"
 
 jobs:
   car:
@@ -21,15 +21,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { id: old_medium,   args: "--res medium", cfd: '{"wall_function": "k", "wake_refinement": false}' }
-          - { id: old_medium_2, args: "--res medium", cfd: '{"wall_function": "k", "wake_refinement": false}' }
-          - { id: wall_only,    args: "--res medium", cfd: '{"wake_refinement": false}' }
-          - { id: wake_only,    args: "--res medium", cfd: '{"wall_function": "k"}' }
-          - { id: new_coarse,   args: "--res coarse", cfd: '{}' }
-          - { id: new_medium,   args: "--res medium", cfd: '{}' }
-          - { id: new_medium_2, args: "--res medium", cfd: '{}' }
-          - { id: new_fine,     args: "--res fine --stage-timeout-s 18000", cfd: '{}' }
-          - { id: lm_medium,    args: "--res medium --cfd-iters 4000 --stage-timeout-s 18000", cfd: '{"turbulence_model": "kOmegaSSTLM"}' }
+          # the wall-resolved stack (y+ <= 2) on the round 2 car: layer settings
+          # tuned at medium size, then the full ~5 M cell "resolved" mesh
+          - { id: res_medium,     args: "--res medium --cfd-iters 400 --stage-timeout-s 18000", cfd: '{"wall_resolved": true}' }
+          - { id: res_medium_a130, args: "--res medium --cfd-iters 400 --stage-timeout-s 18000", cfd: '{"wall_resolved": true, "layer_overrides": {"featureAngle": 130, "maxThicknessToMedialRatio": 0.3}}' }
+          - { id: res_medium_outer, args: "--res medium --cfd-iters 400 --stage-timeout-s 18000", cfd: '{"wall_resolved": true, "layer_overrides": {"nOuterIter": 3, "nRelaxIter": 8}}' }
+          - { id: resolved_5M,    args: "--res resolved --cfd-iters 300 --stage-timeout-s 18000", cfd: '{}' }
     env:
       OMPI_MCA_hwloc_base_use_hwthreads_as_cpus: "1"
       OMPI_MCA_rmaps_base_oversubscribe: "1"
