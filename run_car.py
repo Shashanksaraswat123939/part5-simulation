@@ -251,7 +251,8 @@ def cfd_and_objective(b, stl: Path, mstate: dict, wheel_moi: float, mu: float) -
     parts = {}
     if cfd.patch_forces:
         for k, v in cfd.patch_forces.items():
-            parts[k] = {"D_N": 2 * v["D_half_N"], "L_N": 2 * v["L_half_N"]}
+            parts[k] = {"D_N": 2 * v["D_half_N"], "L_N": 2 * v["L_half_N"],
+                        "y_plus": v.get("y_plus")}
     return {"D20_N": cfd.D20, "L_N": cfd.L, "converged": cfd.converged,
             "residual": cfd.residual_final, "stderr": cfd.force_mean_stderr,
             "drift": cfd.force_drift, "parts": parts, "T_raw_s": obj.T_raw,

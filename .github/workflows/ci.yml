@@ -56,6 +56,49 @@ jobs:
         if: always()
         with: { name: unit-test-logs, path: "*.log" }
 
+  files:
+    # Two cars built without CFD: every manufacturing file, re-read on THIS
+    # platform, must be a closed solid. Files that were clean on Windows tore
+    # on Linux (2026-09-30); this finds that in minutes, not after a solve.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: part5-simulation }
+      - uses: actions/checkout@v4
+        with: { repository: Shashanksaraswat123939/part4-simulation, path: part4-simulation }
+      - uses: actions/checkout@v4
+        with: { repository: Shashanksaraswat123939/part1-simulation, ref: "${{ env.PARTS_REF }}", path: part1-simulation }
+      - uses: actions/checkout@v4
+        with: { repository: Shashanksaraswat123939/part2-simulation, ref: "${{ env.PARTS_REF }}", path: part2-simulation }
+      - uses: actions/checkout@v4
+        with: { repository: Shashanksaraswat123939/part3-simulation, ref: "${{ env.PARTS_REF }}", path: part3-simulation }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install $PY_DEPS
+      - name: Manufacturing files are solids
+        working-directory: part5-simulation
+        run: |
+          python run_car.py --out ../out/f_start --support beam --body-json '{}' --skin-mm 1.2
+          python run_car.py --out ../out/f_round2 --support beam --body-json "$(cat checks/round2_car.json)" --skin-mm 1.117
+          python run_car.py --out ../out/f_parts --support beam --body-json "$(cat checks/round2_car.json)" --skin-mm 1.117             --fwing-json '{"aoa_deg": 8.0}' --support-json '{"disc_front": true}' --nose-json '{"length_mm": 25.0, "wall_mm": 99.0}'
+          python - <<'EOF'
+          import json, sys
+          bad = 0
+          for d in ("f_start", "f_round2", "f_parts"):
+              S = json.load(open(f"../out/{d}/summary.json"))
+              c = S["legality"]["checks"]["manufacture_files_are_solids"]
+              print(d, c, {k: round(v["g"], 3) for k, v in S["manufactured"].items()},
+                    "car", round(S["mass"]["manufactured_mass_g"], 3), "g")
+              bad += not c["pass"]
+          sys.exit(bad)
+          EOF
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: manufacture-files
+          path: out/*/manufacture/*.stl
+
   car:
     runs-on: ubuntu-24.04
     timeout-minutes: 355
