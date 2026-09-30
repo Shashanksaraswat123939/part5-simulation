@@ -132,8 +132,9 @@ def get(d: dict, name: str) -> float:
         part, key = name.split(".")
         key = "beam_w_mm" if key == "beam_d_mm" else key
         return float(d["parts"].get(part, {}).get(key, _part_default(name)))
-    import hybrid as hy
-    return hy.get(_pb().BodyParams.from_dict(d["params"]), name)
+    bp = _pb().BodyParams.from_dict(d["params"])
+    seq, i = _indexed(name)
+    return float(getattr(bp, seq)[i]) if seq else float(getattr(bp, name))
 
 
 def put(d: dict, name: str, v: float) -> dict:
@@ -144,9 +145,24 @@ def put(d: dict, name: str, v: float) -> dict:
         for k in keys:
             parts.setdefault(part, {})[k] = bool(round(v)) if k == "disc_front" else float(v)
         return {"params": d["params"], "parts": parts}
-    import hybrid as hy
-    bp = hy.put(_pb().BodyParams.from_dict(d["params"]), name, v)
+    from dataclasses import replace
+    bp = _pb().BodyParams.from_dict(d["params"])
+    seq, i = _indexed(name)
+    if seq:
+        vals = list(getattr(bp, seq))
+        vals[i] = float(v)
+        bp = replace(bp, **{seq: tuple(vals)})
+    else:
+        bp = replace(bp, **{name: float(v)})
     return {"params": bp.as_dict(), "parts": d["parts"]}
+
+
+def _indexed(name: str):
+    """("st_b", 3) for "st_b3", ("modes", 7) for "mode7", (None, None) for a scalar."""
+    for key, attr in (("st_b", "st_b"), ("st_zt", "st_zt"), ("st_zb", "st_zb"), ("mode", "modes")):
+        if name.startswith(key) and name[len(key):].isdigit():
+            return attr, int(name[len(key):])
+    return None, None
 
 
 def _best(state: dict) -> dict:
@@ -167,7 +183,7 @@ def _write_batch(state: dict, cases: list, phase: str):
 def init():
     pb = _pb()
     (HERE / "search").mkdir(exist_ok=True)
-    start = pb.BodyParams().to_hybrid()
+    start = pb.BodyParams()
     state = {"round": 0, "phase": "confirm", "best": start.as_dict(), "best_T": None,
              "skin_mm": None, "scale": 1.0, "fails": 0, "history": []}
     STATE.write_text(json.dumps(state, indent=1))

@@ -41,14 +41,14 @@ jobs:
           set +e
           fail=0
           for p in part1-simulation part2-simulation part3-simulation part4-simulation part5-simulation; do
-            (cd $p && PART2_PATH=$GITHUB_WORKSPACE/part2-simulation timeout 3600 python run_all_tests.py) > $p.log 2>&1
+            (cd $p && PART2_PATH=$GITHUB_WORKSPACE/part2-simulation timeout 3600 python -m pytest tests -q -p no:cacheprovider) > $p.log 2>&1
             code=$?; echo "exit $code" >> $p.log; [ $code -ne 0 ] && fail=1
             echo "::group::$p (exit $code)"; tail -30 $p.log; echo "::endgroup::"
           done
           {
             echo "## Unit tests ($PARTS_REF)"
             for p in part1-simulation part2-simulation part3-simulation part4-simulation part5-simulation; do
-              echo "### $p"; echo '```'; grep -E "TOTAL|^FAIL|FAILED|exit" $p.log | tail -15; echo '```'
+              echo "### $p"; echo '```'; grep -E "passed|failed|error|^FAILED|exit" $p.log | tail -15; echo '```'
             done
           } >> $GITHUB_STEP_SUMMARY
           exit $fail
@@ -136,7 +136,7 @@ jobs:
           set -o pipefail
           mkdir -p ../out
           python ${{ matrix.script || 'run_car.py' }} --out ../out/${{ matrix.id }} --np 4 --keep-runs ${{ matrix.args }} 2>&1 | tee ../out/run_${{ matrix.id }}.log
-          for f in report.md sign_check.json; do
+          for f in report.md; do
             [ -f ../out/${{ matrix.id }}/$f ] && { echo '```'; cat ../out/${{ matrix.id }}/$f; echo '```'; } >> $GITHUB_STEP_SUMMARY
           done
           true

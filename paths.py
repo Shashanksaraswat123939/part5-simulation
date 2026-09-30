@@ -12,9 +12,6 @@ def add_parts() -> None:
     for p in PARTS.values():
         if p.is_dir() and str(p) not in sys.path:
             sys.path.append(str(p))
-    sb = PARTS["part1-simulation"] / "sandbox"
-    if sb.is_dir() and str(sb) not in sys.path:
-        sys.path.append(str(sb))
     os.environ.setdefault("PART2_PATH", str(PARTS["part2-simulation"]))
 
 
