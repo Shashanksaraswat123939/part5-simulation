@@ -79,6 +79,7 @@ jobs:
           SIMSCALE_API_KEY: ${{ secrets.SIMSCALE_API_KEY }}
           SIMSCALE_PROJECT_ID: ${{ secrets.SIMSCALE_PROJECT_ID }}
         run: |
+          set -o pipefail   # the car run is piped through tee
           python run_car.py --out ../out/start --body-json "$(cat checks/round2_car.json)" --skin-mm 1.117
           python -c "import json,sys; c=json.load(open('../out/start/summary.json'))['legality']['checks']['manufacture_files_are_solids']; print(c); sys.exit(0 if c['pass'] else 1)"
           # the probe is free (no mesh, no run): do it whenever the key is set
