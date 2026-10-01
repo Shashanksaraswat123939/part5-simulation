@@ -2,8 +2,8 @@ name: ci
 
 # simscale branch. On every push: all five test suites and the manufacturing-file
 # check (neither touches SimScale). By hand (Actions > ci > Run workflow):
-#   probe  import the start car's flow domain into SimScale and print the face
-#          mapping. No mesh, no run, no core hours. Run this first.
+#   (the free probe -- import the start car's flow domain into SimScale and print
+#   the face mapping, no mesh, no run -- runs on every push once the key secret is set)
 #   car    the start car, meshed and solved on SimScale.
 # SimScale steps need the repository secrets SIMSCALE_API_KEY and SIMSCALE_PROJECT_ID.
 on:
@@ -80,8 +80,9 @@ jobs:
         run: |
           python run_car.py --out ../out/start --body-json "$(cat checks/round2_car.json)" --skin-mm 1.117
           python -c "import json,sys; c=json.load(open('../out/start/summary.json'))['legality']['checks']['manufacture_files_are_solids']; print(c); sys.exit(0 if c['pass'] else 1)"
+          # the probe is free (no mesh, no run): do it whenever the key is set
           cmd=domain
-          [ "${{ inputs.simscale }}" = "probe" ] && cmd=probe
+          [ -n "$SIMSCALE_API_KEY" ] && cmd=probe
           python ../part2-simulation/simscale_case.py $cmd ../out/start
           if [ "${{ inputs.simscale }}" = "car" ]; then
             python run_car.py --out ../out/start_cfd --body-json "$(cat checks/round2_car.json)" --cfd --res "${{ inputs.res }}" 2>&1 | tee ../out/start_cfd.log
