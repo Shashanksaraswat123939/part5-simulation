@@ -59,10 +59,12 @@ PARTS = {
     "fw.gap_to_wheel_mm": (1.0, 5.0, 10.0), "fw.half_span_mm": (2.0, 34.0, 42.5),
     "fw.flap_chord_mm": (1.0, 8.0, 11.0), "fw.flap_aoa_deg": (5.0, 0.0, 45.0),
     "fw.camber": (0.02, 0.0, 0.08),
-    # one round-beam diameter: a 7 x 8 mm ellipse already has a 3.06 mm end
-    # radius, below the 3.125 mm cutter, so width and height cannot move apart
-    "sup.beam_d_mm": (1.0, 7.0, 12.0),
-    "sup.z_offset_mm": (1.0, -3.0, 3.0), "sup.disc_front": (1.0, 0.0, 1.0),
+    # the support (part4 beam_support.py): the plate's chord and least
+    # thickness, the pod's length, roof and wall, the strip, the discs
+    "sup.beam_w_mm": (2.0, 10.0, 24.0), "sup.beam_h_mm": (0.3, 1.0, 4.0),
+    "sup.pod_len_mm": (2.0, 10.0, 20.0), "sup.pod_arch_mm": (1.0, 14.0, 19.0),
+    "sup.pod_wall_mm": (0.2, 0.6, 1.6), "sup.strip": (1.0, 0.0, 1.0),
+    "sup.disc_front": (1.0, 0.0, 1.0),
     "sup.disc_rear": (1.0, 0.0, 1.0), "sup.disc_r_mm": (1.0, 8.0, 12.0),
     # the disc inside the rim (+) or standing inboard of the wheel (-), and
     # the hubcap closing the wheel's outer side
@@ -124,7 +126,6 @@ def _part_default(name: str) -> float:
     import nose as ns
     import wings as wg
     part, key = name.split(".")
-    key = "beam_w_mm" if key == "beam_d_mm" else key
     return float(getattr({"fw": wg.FrontWing(), "sup": bsm.BeamSupport(),
                           "nose": ns.NoseCone()}[part], key))
 
@@ -133,7 +134,6 @@ def get(d: dict, name: str) -> float:
     """d = {"params": body dict, "parts": {"fw": {...}, "sup": {...}, "nose": {...}}}."""
     if name in PARTS:
         part, key = name.split(".")
-        key = "beam_w_mm" if key == "beam_d_mm" else key
         return float(d["parts"].get(part, {}).get(key, _part_default(name)))
     bp = _pb().BodyParams.from_dict(d["params"])
     seq, i = _indexed(name)
@@ -144,10 +144,8 @@ def put(d: dict, name: str, v: float) -> dict:
     if name in PARTS:
         part, key = name.split(".")
         parts = {k: dict(x) for k, x in d["parts"].items()}
-        keys = ("beam_w_mm", "beam_h_mm") if key == "beam_d_mm" else (key,)
-        for k in keys:
-            parts.setdefault(part, {})[k] = (bool(round(v)) if k in ("disc_front", "disc_rear", "hubcap")
-                                             else float(v))
+        parts.setdefault(part, {})[key] = (bool(round(v)) if key in ("disc_front", "disc_rear", "hubcap",
+                                                                      "strip") else float(v))
         return {"params": d["params"], "parts": parts}
     from dataclasses import replace
     bp = _pb().BodyParams.from_dict(d["params"])

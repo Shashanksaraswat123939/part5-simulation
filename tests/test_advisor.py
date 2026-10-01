@@ -105,8 +105,9 @@ def test_pattern_parts_screen_carries_part_changes_to_the_confirm():
             B = json.loads(pattern.BATCH.read_text())
             tags = {c["tag"]: c for c in B["cases"]}
             assert B["phase"] == "screen" and "fw.aoa_deg+" in tags and "nose.length_mm-" in tags
-            assert "sup.beam_d_mm-" not in tags                  # 7 mm is the lower bound
-            assert tags["sup.beam_d_mm+"]["parts"]["sup"] == {"beam_w_mm": 8.0, "beam_h_mm": 8.0}
+            assert "sup.pod_arch_mm+" not in tags                # 19 mm is the upper bound
+            assert tags["sup.beam_w_mm+"]["parts"]["sup"] == {"beam_w_mm": 22.0}
+            assert tags["sup.strip-"]["parts"]["sup"]["strip"] is False
             # the discs and the hubcap are on by default: the screen tries them off
             assert "sup.disc_front+" not in tags
             assert tags["sup.disc_front-"]["parts"]["sup"]["disc_front"] is False
