@@ -63,7 +63,10 @@ PARTS = {
     # radius, below the 3.125 mm cutter, so width and height cannot move apart
     "sup.beam_d_mm": (1.0, 7.0, 12.0),
     "sup.z_offset_mm": (1.0, -3.0, 3.0), "sup.disc_front": (1.0, 0.0, 1.0),
-    "sup.disc_r_mm": (1.0, 8.0, 12.0),
+    "sup.disc_rear": (1.0, 0.0, 1.0), "sup.disc_r_mm": (1.0, 8.0, 12.0),
+    # the disc inside the rim (+) or standing inboard of the wheel (-), and
+    # the hubcap closing the wheel's outer side
+    "sup.disc_recess_mm": (1.0, -2.5, 1.5), "sup.hubcap": (1.0, 0.0, 1.0),
     "nose.length_mm": (5.0, 10.0, 40.0), "nose.k": (0.15, 0.3, 1.0),
     "nose.p": (0.5, 2.0, 4.0), "nose.tip_z_mm": (2.0, 4.0, 20.0),
 }
@@ -143,7 +146,8 @@ def put(d: dict, name: str, v: float) -> dict:
         parts = {k: dict(x) for k, x in d["parts"].items()}
         keys = ("beam_w_mm", "beam_h_mm") if key == "beam_d_mm" else (key,)
         for k in keys:
-            parts.setdefault(part, {})[k] = bool(round(v)) if k == "disc_front" else float(v)
+            parts.setdefault(part, {})[k] = (bool(round(v)) if k in ("disc_front", "disc_rear", "hubcap")
+                                             else float(v))
         return {"params": d["params"], "parts": parts}
     from dataclasses import replace
     bp = _pb().BodyParams.from_dict(d["params"])

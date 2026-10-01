@@ -107,7 +107,10 @@ def test_pattern_parts_screen_carries_part_changes_to_the_confirm():
             assert B["phase"] == "screen" and "fw.aoa_deg+" in tags and "nose.length_mm-" in tags
             assert "sup.beam_d_mm-" not in tags                  # 7 mm is the lower bound
             assert tags["sup.beam_d_mm+"]["parts"]["sup"] == {"beam_w_mm": 8.0, "beam_h_mm": 8.0}
-            assert tags["sup.disc_front+"]["parts"]["sup"]["disc_front"] is True
+            # the discs and the hubcap are on by default: the screen tries them off
+            assert "sup.disc_front+" not in tags
+            assert tags["sup.disc_front-"]["parts"]["sup"]["disc_front"] is False
+            assert tags["sup.hubcap-"]["parts"]["sup"]["hubcap"] is False
             assert tags["fw.aoa_deg+"]["parts"]["fw"]["aoa_deg"] == 8.0
             rows = [{"round": 4, "phase": "screen", "tag": c["tag"], "ok": True,
                      "params": c["params"], "parts": c["parts"],
