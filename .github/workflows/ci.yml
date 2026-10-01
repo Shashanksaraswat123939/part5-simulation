@@ -4,7 +4,8 @@ name: ci
 # check (neither touches SimScale). By hand (Actions > ci > Run workflow):
 #   (the free probe -- import the start car's flow domain into SimScale and print
 #   the face mapping, no mesh, no run -- runs on every push once the key secret is set)
-#   car    the start car, meshed and solved on SimScale.
+#   car    the start car, meshed and solved on SimScale. A push whose commit
+#          message contains "[simscale car]" runs it too (medium mesh).
 # SimScale steps need the repository secrets SIMSCALE_API_KEY and SIMSCALE_PROJECT_ID.
 on:
   push:
@@ -57,7 +58,7 @@ jobs:
 
   files:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
         with: { path: part5-simulation }
@@ -81,11 +82,14 @@ jobs:
           python run_car.py --out ../out/start --body-json "$(cat checks/round2_car.json)" --skin-mm 1.117
           python -c "import json,sys; c=json.load(open('../out/start/summary.json'))['legality']['checks']['manufacture_files_are_solids']; print(c); sys.exit(0 if c['pass'] else 1)"
           # the probe is free (no mesh, no run): do it whenever the key is set
+          car=0
+          if [ "${{ inputs.simscale }}" = "car" ] || [ "${{ contains(github.event.head_commit.message, '[simscale car]') }}" = "true" ]; then car=1; fi
           cmd=domain
           [ -n "$SIMSCALE_API_KEY" ] && cmd=probe
-          python ../part2-simulation/simscale_case.py $cmd ../out/start
-          if [ "${{ inputs.simscale }}" = "car" ]; then
-            python run_car.py --out ../out/start_cfd --body-json "$(cat checks/round2_car.json)" --cfd --res "${{ inputs.res }}" 2>&1 | tee ../out/start_cfd.log
+          # a car run is the stronger test, so a failed probe does not stop it
+          python ../part2-simulation/simscale_case.py $cmd ../out/start || [ $car = 1 ]
+          if [ $car = 1 ]; then
+            python run_car.py --out ../out/start_cfd --body-json "$(cat checks/round2_car.json)" --cfd --res "${{ inputs.res || 'medium' }}" 2>&1 | tee ../out/start_cfd.log
             cat ../out/start_cfd/report.md >> $GITHUB_STEP_SUMMARY || true
           fi
       - uses: actions/upload-artifact@v4
