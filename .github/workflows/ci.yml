@@ -4,8 +4,8 @@ name: ci
 # check (neither touches SimScale). By hand (Actions > ci > Run workflow):
 #   (the free probe -- import the start car's flow domain into SimScale and print
 #   the face mapping, no mesh, no run -- runs on every push once the key secret is set)
-#   car    the start car, meshed and solved on SimScale. A push whose commit
-#          message contains "[simscale car]" runs it too (medium mesh).
+#   car    the start car, meshed and solved on SimScale, in its own job. A push
+#          whose commit message contains "[simscale car]" runs it too (medium mesh).
 # SimScale steps need the repository secrets SIMSCALE_API_KEY and SIMSCALE_PROJECT_ID.
 on:
   push:
@@ -58,6 +58,46 @@ jobs:
 
   files:
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: part5-simulation }
+      - uses: actions/checkout@v4
+        with: { repository: Shashanksaraswat123939/part4-simulation, ref: simscale, path: part4-simulation }
+      - uses: actions/checkout@v4
+        with: { repository: Shashanksaraswat123939/part1-simulation, ref: simscale, path: part1-simulation }
+      - uses: actions/checkout@v4
+        with: { repository: Shashanksaraswat123939/part2-simulation, ref: simscale, path: part2-simulation }
+      - uses: actions/checkout@v4
+        with: { repository: Shashanksaraswat123939/part3-simulation, ref: simscale, path: part3-simulation }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install $PY_DEPS "$SDK"
+      - name: Start car, its manufacturing files and its SimScale flow domain (the free probe)
+        working-directory: part5-simulation
+        env:
+          SIMSCALE_API_KEY: ${{ secrets.SIMSCALE_API_KEY }}
+          SIMSCALE_PROJECT_ID: ${{ secrets.SIMSCALE_PROJECT_ID }}
+        run: |
+          python run_car.py --out ../out/start --body-json "$(cat checks/round2_car.json)" --skin-mm 1.117
+          python -c "import json,sys; c=json.load(open('../out/start/summary.json'))['legality']['checks']['manufacture_files_are_solids']; print(c); sys.exit(0 if c['pass'] else 1)"
+          # the probe is free (no mesh, no run): do it whenever the key is set
+          cmd=domain
+          [ -n "$SIMSCALE_API_KEY" ] && cmd=probe
+          python ../part2-simulation/simscale_case.py $cmd ../out/start
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: simscale-probe
+          path: |
+            out/*/summary.json
+            out/*/report.md
+
+  car:
+    # the start car meshed and solved on SimScale (core hours): by hand, or
+    # from a push whose commit message contains "[simscale car]"
+    if: inputs.simscale == 'car' || contains(github.event.head_commit.message, '[simscale car]')
+    runs-on: ubuntu-24.04
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
@@ -73,26 +113,15 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
       - run: pip install $PY_DEPS "$SDK"
-      - name: Start car, its manufacturing files and its SimScale flow domain
+      - name: Start car on SimScale
         working-directory: part5-simulation
         env:
           SIMSCALE_API_KEY: ${{ secrets.SIMSCALE_API_KEY }}
           SIMSCALE_PROJECT_ID: ${{ secrets.SIMSCALE_PROJECT_ID }}
         run: |
-          set -o pipefail   # the car run is piped through tee
-          python run_car.py --out ../out/start --body-json "$(cat checks/round2_car.json)" --skin-mm 1.117
-          python -c "import json,sys; c=json.load(open('../out/start/summary.json'))['legality']['checks']['manufacture_files_are_solids']; print(c); sys.exit(0 if c['pass'] else 1)"
-          # the probe is free (no mesh, no run): do it whenever the key is set
-          car=0
-          if [ "${{ inputs.simscale }}" = "car" ] || [ "${{ contains(github.event.head_commit.message, '[simscale car]') }}" = "true" ]; then car=1; fi
-          cmd=domain
-          [ -n "$SIMSCALE_API_KEY" ] && cmd=probe
-          # a car run is the stronger test, so a failed probe does not stop it
-          python ../part2-simulation/simscale_case.py $cmd ../out/start || [ $car = 1 ]
-          if [ $car = 1 ]; then
-            python run_car.py --out ../out/start_cfd --body-json "$(cat checks/round2_car.json)" --cfd --res "${{ inputs.res || 'medium' }}" 2>&1 | tee ../out/start_cfd.log
-            cat ../out/start_cfd/report.md >> $GITHUB_STEP_SUMMARY || true
-          fi
+          set -o pipefail
+          python run_car.py --out ../out/start_cfd --body-json "$(cat checks/round2_car.json)" --cfd --res "${{ inputs.res || 'medium' }}" 2>&1 | tee ../out/start_cfd.log
+          cat ../out/start_cfd/report.md >> $GITHUB_STEP_SUMMARY || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
