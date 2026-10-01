@@ -61,9 +61,11 @@ PARTS = {
     "fw.camber": (0.02, 0.0, 0.08),
     # the support (part4 beam_support.py): the plate's chord and least
     # thickness, the pod's length, roof and wall, the strip, the discs
-    "sup.beam_w_mm": (2.0, 10.0, 24.0), "sup.beam_h_mm": (0.3, 1.0, 4.0),
+    # (thicknesses start at the printer's 0.7 mm minimum; the generator
+    # raises them itself where the loads need more)
+    "sup.beam_w_mm": (2.0, 8.0, 24.0), "sup.beam_h_mm": (0.3, 0.7, 4.0),
     "sup.pod_len_mm": (2.0, 10.0, 20.0), "sup.pod_arch_mm": (1.0, 14.0, 19.0),
-    "sup.pod_wall_mm": (0.2, 0.6, 1.6), "sup.strip": (1.0, 0.0, 1.0),
+    "sup.pod_wall_mm": (0.2, 0.7, 1.5), "sup.strip": (1.0, 0.0, 1.0),
     "sup.disc_front": (1.0, 0.0, 1.0),
     "sup.disc_rear": (1.0, 0.0, 1.0), "sup.disc_r_mm": (1.0, 8.0, 12.0),
     # the disc inside the rim (+) or standing inboard of the wheel (-), and
