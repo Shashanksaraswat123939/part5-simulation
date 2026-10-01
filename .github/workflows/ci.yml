@@ -84,7 +84,8 @@ jobs:
           # the probe is free (no mesh, no run): do it whenever the key is set
           cmd=domain
           [ -n "$SIMSCALE_API_KEY" ] && cmd=probe
-          python ../part2-simulation/simscale_case.py $cmd ../out/start
+          python ../part2-simulation/simscale_case.py $cmd ../out/start || true
+          [ -n "$SIMSCALE_API_KEY" ] && python ../part2-simulation/simscale_case.py variants ../out/start
       - uses: actions/upload-artifact@v4
         if: always()
         with:
