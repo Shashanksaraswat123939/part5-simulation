@@ -105,13 +105,11 @@ def test_pattern_parts_screen_carries_part_changes_to_the_confirm():
             B = json.loads(pattern.BATCH.read_text())
             tags = {c["tag"]: c for c in B["cases"]}
             assert B["phase"] == "screen" and "fw.aoa_deg+" in tags and "nose.length_mm-" in tags
-            assert "sup.pod_arch_mm+" not in tags                # 19 mm is the upper bound
+            assert "sup.beam_h_mm-" not in tags                  # 0.7 mm is the printer's minimum
+            assert not any("hubcap" in t or "pod_len" in t for t in tags)   # hidden from the CFD
+            assert tags["sup.pod_wall_mm+"]["sized"] and not tags["sup.beam_w_mm+"]["sized"]
             assert tags["sup.beam_w_mm+"]["parts"]["sup"] == {"beam_w_mm": 14.0}
             assert tags["sup.strip-"]["parts"]["sup"]["strip"] is False
-            # the discs and the hubcap are on by default: the screen tries them off
-            assert "sup.disc_front+" not in tags
-            assert tags["sup.disc_front-"]["parts"]["sup"]["disc_front"] is False
-            assert tags["sup.hubcap-"]["parts"]["sup"]["hubcap"] is False
             assert tags["fw.aoa_deg+"]["parts"]["fw"]["aoa_deg"] == 8.0
             rows = [{"round": 4, "phase": "screen", "tag": c["tag"], "ok": True,
                      "params": c["params"], "parts": c["parts"],

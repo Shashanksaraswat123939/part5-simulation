@@ -32,7 +32,7 @@ jobs:
     timeout-minutes: 360
     strategy:
       fail-fast: false
-      max-parallel: ${{ fromJSON(vars.SIMSCALE_MAX_PARALLEL || '4') }}
+      max-parallel: ${{ fromJSON(vars.SIMSCALE_MAX_PARALLEL || '8') }}
       matrix:
         id: ${{ fromJSON(needs.setup.outputs.ids) }}
     env:

@@ -79,7 +79,7 @@ jobs:
           SIMSCALE_API_KEY: ${{ secrets.SIMSCALE_API_KEY }}
           SIMSCALE_PROJECT_ID: ${{ secrets.SIMSCALE_PROJECT_ID }}
         run: |
-          python run_car.py --out ../out/start --body-json "$(cat checks/round2_car.json)" --skin-mm 1.117
+          python run_car.py --out ../out/start --body-json "$(cat checks/round2_car.json)"
           python -c "import json,sys; c=json.load(open('../out/start/summary.json'))['legality']['checks']['manufacture_files_are_solids']; print(c); sys.exit(0 if c['pass'] else 1)"
           # the probe is free (no mesh, no run): do it whenever the key is set
           cmd=domain
@@ -120,6 +120,7 @@ jobs:
           SIMSCALE_PROJECT_ID: ${{ secrets.SIMSCALE_PROJECT_ID }}
         run: |
           set -o pipefail
+          mkdir -p ../out        # for tee's log: without the folder tee failed, and the job with it
           python run_car.py --out ../out/start_cfd --body-json "$(cat checks/round2_car.json)" --cfd --res "${{ inputs.res || 'medium' }}" 2>&1 | tee ../out/start_cfd.log
           cat ../out/start_cfd/report.md >> $GITHUB_STEP_SUMMARY || true
       - uses: actions/upload-artifact@v4

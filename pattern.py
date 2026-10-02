@@ -8,13 +8,16 @@ change is measured for real.
 
 A round has two batches, each one GitHub Actions run (.github/workflows/pattern.yml):
 
-  screen   the current car twice (the noise), and every parameter of one group
-           at +step and -step. The skin is held at the current car's value so a
+  screen   ON THE COARSE MESH (team decision 2026-10-02: a medium SimScale car
+           is hours, so screening is coarse and only winners see the medium
+           mesh). The current car twice (the noise), and every parameter of
+           one group at +step and -step. The skin is held at the current car's value so a
            job is one build + one CFD; cars are compared by race time at exactly
            the 48.2 g target (run_car's T_at_target_s), not at the few-tenths-
            of-a-gram they happen to weigh. Groups alternate: the 32 sculpt modes,
            then the loft (8 stations x b/zt/zb, sidepods, squareness, blend).
-  confirm  candidates re-sized to 48.2 g (full mass loop): all winners together,
+  confirm  ON THE MEDIUM MESH, candidates re-sized to 48.2 g (full mass loop):
+           all winners together,
            the better half, the top 4, the current car again, and the current car
            with the step halved on its top 4. The best confirmed car becomes the
            current car only if it beats it by more than twice the noise.
@@ -59,22 +62,28 @@ PARTS = {
     "fw.gap_to_wheel_mm": (1.0, 5.0, 10.0), "fw.half_span_mm": (2.0, 34.0, 42.5),
     "fw.flap_chord_mm": (1.0, 8.0, 11.0), "fw.flap_aoa_deg": (5.0, 0.0, 45.0),
     "fw.camber": (0.02, 0.0, 0.08),
-    # the support (part4 beam_support.py): the plate's chord and least
-    # thickness, the pod's length, roof and wall, the strip, the discs
-    # (thicknesses start at the printer's 0.7 mm minimum; the generator
-    # raises them itself where the loads need more)
+    # the support (part4 beam_support.py), WHAT THE AIR SEES OF IT: the plate
+    # and the strip crossing the gap between body and wheel, and the disc
+    # where it stands inboard of the wheel (-) instead of inside the rim (+).
+    # The pod's outside is the body's own surface, and the CFD wheel is a
+    # closed disc that hides the hubcap and a disc inside the rim: those sizes
+    # move only mass, so the generator sets them (lightest that passes) and
+    # no CFD car is spent on them.
     "sup.beam_w_mm": (2.0, 8.0, 24.0), "sup.beam_h_mm": (0.3, 0.7, 4.0),
-    "sup.pod_len_mm": (2.0, 10.0, 20.0), "sup.pod_arch_mm": (1.0, 14.0, 19.0),
-    "sup.pod_wall_mm": (0.2, 0.7, 1.5), "sup.strip": (1.0, 0.0, 1.0),
-    "sup.disc_front": (1.0, 0.0, 1.0),
-    "sup.disc_rear": (1.0, 0.0, 1.0), "sup.disc_r_mm": (1.0, 8.0, 12.0),
-    # the disc inside the rim (+) or standing inboard of the wheel (-), and
-    # the hubcap closing the wheel's outer side
-    "sup.disc_recess_mm": (1.0, -2.5, 1.5), "sup.hubcap": (1.0, 0.0, 1.0),
+    "sup.strip": (1.0, 0.0, 1.0), "sup.strip_w_mm": (1.0, 4.0, 12.0),
+    "sup.disc_recess_mm": (1.0, -2.5, 1.5),
+    # WHERE THE MASS GOES. The car is brought to 48.2 g by the body's size,
+    # so plastic hidden in the pods makes the body slimmer: on the start car
+    # a 0.7 mm pod wall needs a 2.63 mm skin, 1.5 mm needs 2.02 and 2.5 mm
+    # needs 0.86 (2 Oct 2026). Lighter supports are not faster by themselves.
+    "sup.pod_wall_mm": (0.5, 0.7, 3.0),
     "nose.length_mm": (5.0, 10.0, 40.0), "nose.k": (0.15, 0.3, 1.0),
     "nose.p": (0.5, 2.0, 4.0), "nose.tip_z_mm": (2.0, 4.0, 20.0),
 }
 PART_FLAGS = {"fw": "--fwing-json", "sup": "--support-json", "nose": "--nose-json"}
+# Parameters that change the car only through its mass: at a fixed skin they
+# are invisible, so their screening cars are re-sized to 48.2 g.
+SIZED = {"sup.pod_wall_mm"}
 
 
 def _pb():
@@ -146,8 +155,7 @@ def put(d: dict, name: str, v: float) -> dict:
     if name in PARTS:
         part, key = name.split(".")
         parts = {k: dict(x) for k, x in d["parts"].items()}
-        parts.setdefault(part, {})[key] = (bool(round(v)) if key in ("disc_front", "disc_rear", "hubcap",
-                                                                      "strip") else float(v))
+        parts.setdefault(part, {})[key] = bool(round(v)) if key == "strip" else float(v)
         return {"params": d["params"], "parts": parts}
     from dataclasses import replace
     bp = _pb().BodyParams.from_dict(d["params"])
@@ -173,8 +181,8 @@ def _best(state: dict) -> dict:
     return {"params": state["best"], "parts": state.get("parts", {})}
 
 
-def _case(i: int, tag: str, d: dict, sized: bool) -> dict:
-    return {"id": i, "tag": tag, "params": d["params"], "parts": d["parts"], "sized": sized}
+def _case(i: int, tag: str, d: dict, sized: bool, **more) -> dict:
+    return {"id": i, "tag": tag, "params": d["params"], "parts": d["parts"], "sized": sized, **more}
 
 
 def _write_batch(state: dict, cases: list, phase: str):
@@ -184,15 +192,30 @@ def _write_batch(state: dict, cases: list, phase: str):
         {"round": state["round"], "phase": phase, "ids": [c["id"] for c in cases]}))
 
 
+# The start: the best car of the OpenFOAM line (its rounds 0-7: the body of
+# checks/round2_car.json, the front wing 1 mm shorter a side, a 25 mm nose),
+# on the generated supports. Supports, wing and nose, then the body's sculpt
+# modes, then its loft, are searched in turn.
+START_PARTS = {"fw": {"half_span_mm": 37.5}, "nose": {"length_mm": 25.0}}
+GROUPS = ["parts", "modes", "loft"]
+
+
 def init():
-    pb = _pb()
     (HERE / "search").mkdir(exist_ok=True)
-    start = pb.BodyParams()
-    state = {"round": 0, "phase": "confirm", "best": start.as_dict(), "best_T": None,
-             "skin_mm": None, "scale": 1.0, "fails": 0, "history": []}
+    start = {"params": json.loads((HERE / "checks" / "round2_car.json").read_text()),
+             "parts": START_PARTS}
+    state = {"round": 0, "phase": "confirm", "best": start["params"], "parts": START_PARTS,
+             "best_T": None, "skin_mm": None, "scale": 1.0, "fails": 0, "history": [],
+             "groups": GROUPS}
     STATE.write_text(json.dumps(state, indent=1))
-    cases = [{"id": 0, "tag": "start", "params": start.as_dict(), "sized": True},
-             {"id": 1, "tag": "start_repeat", "params": start.as_dict(), "sized": True}]
+    # twice on each mesh: the noise of both, and how far the coarse mesh reads
+    # from the medium one, before any car is ranked on it
+    # ... and the same car with heavier pods and so a slimmer body
+    cases = [_case(0, "start", start, True), _case(1, "start_repeat", start, True),
+             _case(2, "start_coarse", start, True, res="coarse"),
+             _case(3, "start_coarse_repeat", start, True, res="coarse"),
+             _case(4, "pod_wall_1.5", put(start, "sup.pod_wall_mm", 1.5), True, res="coarse"),
+             _case(5, "pod_wall_2.5", put(start, "sup.pod_wall_mm", 2.5), True, res="coarse")]
     _write_batch(state, cases, "confirm")
     return state
 
@@ -203,7 +226,8 @@ def evaluate(case_id: int, out: Path) -> dict:
     c = next(c for c in B["cases"] if c["id"] == case_id)
     # beam: the parametrised team architecture; the v2 CAD rear support fails
     # T7.13 (its disc blocks the hang-test claw), so it cannot be the base.
-    args = ["--out", str(out), "--cfd", "--res", "medium", "--support", "beam",
+    res = c.get("res") or ("coarse" if B["phase"] == "screen" else "medium")
+    args = ["--out", str(out), "--cfd", "--res", res, "--support", "beam",
             "--body-json", json.dumps(c["params"])]
     for part, flag in PART_FLAGS.items():
         if c.get("parts", {}).get(part):
@@ -211,7 +235,8 @@ def evaluate(case_id: int, out: Path) -> dict:
     if not c["sized"]:
         args += ["--skin-mm", str(B["skin_mm"])]
     row = {"id": case_id, "tag": c["tag"], "round": B["round"], "phase": B["phase"],
-           "params": c["params"], "parts": c.get("parts", {}), "sized": c["sized"], "ok": False}
+           "params": c["params"], "parts": c.get("parts", {}), "sized": c["sized"], "res": res,
+           "ok": False}
     try:
         S = rc.main(args)
         ci = S["cfd_initial"]
@@ -299,10 +324,12 @@ def advance(root: Path) -> str:
         return "\n".join(msg)
 
     # confirm
-    good = average_repeats([r for r in rows if r["ok"]])
+    coarse = [r for r in rows if r["ok"] and r.get("res") == "coarse"]    # batch 0's pair
+    good = average_repeats([r for r in rows if r["ok"] and r.get("res") != "coarse"])
     if not good:
         raise SystemExit("no valid car in the confirm batch")
-    cur = [r["T_s"] for r in good if r["tag"] in ("current", "start", "start_repeat")]
+    cur = [r["T_s"] for r in good
+           if {"current", "start", "start_repeat"} & set(r["tag"].split("+"))]
     top = min(good, key=lambda r: r["T_s"])
     noise = max(state.get("screen_noise_s", MIN_NOISE_S), MIN_NOISE_S)
     # Compare within this batch: the current car was re-run beside the candidates.
@@ -311,6 +338,10 @@ def advance(root: Path) -> str:
         state["best_T"] = ref
         state["skin_mm"] = float(np.mean([r["skin_mm"] for r in good if r["skin_mm"] is not None]))
         msg.append(f"start car: {ref:.5f} s at 48.2 g, skin {state['skin_mm']:.2f} mm")
+        for r in sorted(coarse, key=lambda r: r["tag"]):
+            msg.append(f"  coarse mesh, {r['tag']}: {r['T_s']:.5f} s "
+                       f"({(r['T_s'] - ref) * 1e3:+.2f} ms on the medium start car), "
+                       f"drag {r['D20_N']:.4f} N, skin {r['skin_mm']:.2f} mm")
     elif top["T_s"] < ref - 2 * noise and top["tag"] not in ("current",):
         state["best"], state["best_T"] = top["params"], top["T_s"]
         state["parts"] = top.get("parts", {})
@@ -343,7 +374,7 @@ def plan_screen(state: dict) -> str:
         for s, d in (("+", 1), ("-", -1)):
             v = float(np.clip(get(best, n) + d * state["scale"] * step0(n), lo, hi))
             if v != get(best, n):
-                cases.append(_case(len(cases), f"{n}{s}", put(best, n, v), False))
+                cases.append(_case(len(cases), f"{n}{s}", put(best, n, v), n in SIZED))
     state["phase"] = "screen"
     STATE.write_text(json.dumps(state, indent=1, default=float))
     _write_batch(state, cases, "screen")
@@ -378,7 +409,7 @@ def main(argv=None):
     a = ap.parse_args(argv)
     if a.cmd == "init":
         init()
-        print("batch 0: the start car, sized, twice")
+        print("batch 0: the start car twice on each mesh, and with two heavier pods")
     elif a.cmd == "eval":
         print(json.dumps(evaluate(a.id, Path(a.out)), default=str)[:1500])
     elif a.cmd == "advance":
