@@ -1,6 +1,6 @@
 {
  "round": 0,
- "phase": "confirm",
+ "phase": "screen",
  "best": {
   "nose_len": 8.0,
   "n_b": 10.0,
@@ -98,8 +98,8 @@
    "length_mm": 25.0
   }
  },
- "best_T": null,
- "skin_mm": null,
+ "best_T": 1.59418309016717,
+ "skin_mm": 2.6252840550911865,
  "scale": 1.0,
  "fails": 0,
  "history": [],
